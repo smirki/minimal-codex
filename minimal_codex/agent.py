@@ -38,16 +38,131 @@ from .tools import (
 # LiteLLM configuration - important for compatibility with various APIs
 litellm.drop_params = True
 
+# ============================================================================
+# Context Compaction Constants (from Codex's compact.rs and truncate.rs)
+# ============================================================================
+
+# Exact constant from Codex's truncate.rs
+APPROX_BYTES_PER_TOKEN = 4
+COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
+COMPACT_USER_MESSAGE_MAX_BYTES = COMPACT_USER_MESSAGE_MAX_TOKENS * APPROX_BYTES_PER_TOKEN  # 80,000
+
+# Exact prompt from compact/prompt.md
+COMPACT_PROMPT = """You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+
+Include:
+- Current progress and key decisions made
+- Important context, constraints, or user preferences
+- What remains to be done (clear next steps)
+- Any critical data, examples, or references needed to continue
+
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work."""
+
+# Exact prefix from compact/summary_prefix.md
+SUMMARY_PREFIX = """Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:"""
+
+
+# ============================================================================
+# Context Compaction Functions (from Codex's compact.rs)
+# ============================================================================
+
+def approx_token_count(text: str) -> int:
+    """Approximate token count (exact Codex formula from truncate.rs)."""
+    byte_len = len(text.encode('utf-8'))
+    return (byte_len + APPROX_BYTES_PER_TOKEN - 1) // APPROX_BYTES_PER_TOKEN
+
+
+def collect_user_messages(
+    messages: list[dict],
+    max_bytes: int = COMPACT_USER_MESSAGE_MAX_BYTES
+) -> str:
+    """Extract user messages from history up to max_bytes.
+
+    This matches Codex's collect_user_messages() exactly:
+    - Iterates through messages in order
+    - Concatenates user message content
+    - Stops when byte limit is reached
+    """
+    result = []
+    total_bytes = 0
+
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            # Handle multi-part messages (text + images)
+            content = " ".join(
+                part.get("text", "") for part in content
+                if part.get("type") == "text"
+            )
+
+        content_bytes = len(content.encode('utf-8'))
+
+        if total_bytes + content_bytes > max_bytes:
+            # Truncate to fit
+            remaining = max_bytes - total_bytes
+            if remaining > 0:
+                # Simple byte truncation (Codex does UTF-8 safe truncation)
+                truncated = content.encode('utf-8')[:remaining].decode('utf-8', errors='ignore')
+                result.append(truncated)
+            break
+
+        result.append(content)
+        total_bytes += content_bytes
+
+    return "\n\n".join(result)
+
+
+def build_compacted_history(
+    original_messages: list[dict],
+    summary: str
+) -> list[dict]:
+    """Build new conversation history with summary.
+
+    Matches Codex's build_compacted_history():
+    - Keep system message(s) at the start
+    - Add summary as a user message with prefix
+    - Include preserved user messages
+    """
+    compacted = []
+
+    # 1. Keep system messages at start
+    for msg in original_messages:
+        if msg.get("role") == "system":
+            compacted.append(msg)
+        else:
+            break  # Stop at first non-system message
+
+    # 2. Add summary with prefix
+    summary_message = {
+        "role": "user",
+        "content": f"{SUMMARY_PREFIX}\n\n{summary}"
+    }
+    compacted.append(summary_message)
+
+    # 3. Collect user messages up to limit
+    user_content = collect_user_messages(original_messages, COMPACT_USER_MESSAGE_MAX_BYTES)
+    if user_content:
+        compacted.append({
+            "role": "user",
+            "content": f"[Preserved user context]\n{user_content}"
+        })
+
+    return compacted
+
 
 class CodexAgent:
     """Minimal Codex Agent - 1:1 replica of Codex CLI's autonomous logic."""
 
-    def __init__(self, model: str, cwd: str = "."):
+    def __init__(self, model: str, cwd: str = ".", context_window: int = 128000):
         """Initialize the agent.
 
         Args:
             model: Model name to use (passed to LiteLLM)
             cwd: Working directory for the agent
+            context_window: Model's context window size (for compaction threshold)
         """
         self.model = model
         self.cwd = Path(cwd).resolve()
@@ -58,6 +173,11 @@ class CodexAgent:
         self.total_cached_tokens = 0
         self.total_cost = 0.0
         self.plan = []  # Current plan state
+
+        # Context compaction thresholds (from Codex config)
+        self.context_window = context_window
+        self.compaction_threshold = 0.8  # Compact at 80% of context
+        self.last_compaction_tokens = 0
 
     def run(self, task: str, max_turns: int = 100) -> dict:
         """Run the agent until task completion.
@@ -77,6 +197,10 @@ class CodexAgent:
             self._record_message(msg["role"], msg["content"])
 
         for turn in range(max_turns):
+            # Check for compaction before API call (from Codex's compact.rs)
+            if self.compact_conversation():
+                print(f"[Compacted context at turn {turn}]")
+
             try:
                 response = self._call_api_with_retry()
             except Exception as e:
@@ -177,6 +301,95 @@ class CodexAgent:
         """Check if error should trigger retry."""
         error_str = str(error).lower()
         return any(x in error_str for x in ['429', '500', '502', '503', 'timeout', 'connection'])
+
+    # ========================================================================
+    # Context Compaction Methods (from Codex's compact.rs)
+    # ========================================================================
+
+    def should_compact(self) -> bool:
+        """Check if compaction is needed."""
+        current_tokens = self._estimate_context_tokens()
+        threshold_tokens = int(self.context_window * self.compaction_threshold)
+
+        # Only compact if significantly over threshold
+        # and we haven't just compacted
+        return (current_tokens > threshold_tokens and
+                current_tokens - self.last_compaction_tokens > 10000)
+
+    def _estimate_context_tokens(self) -> int:
+        """Estimate total tokens in conversation."""
+        total = 0
+        for msg in self.messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total += approx_token_count(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if part.get("type") == "text":
+                        total += approx_token_count(part.get("text", ""))
+        return total
+
+    def compact_conversation(self) -> bool:
+        """Perform context compaction using LLM summarization.
+
+        Returns True if compaction was performed.
+        """
+        if not self.should_compact():
+            return False
+
+        # Build prompt for summarization
+        history_text = self._format_history_for_summary()
+
+        summary_messages = [
+            {"role": "system", "content": COMPACT_PROMPT},
+            {"role": "user", "content": history_text}
+        ]
+
+        try:
+            # Call model for summarization
+            response = completion(
+                model=self.model,
+                messages=summary_messages,
+                max_tokens=4000,  # Allow substantial summary
+            )
+            summary = response.choices[0].message.content
+
+            # Track tokens used for summary
+            if hasattr(response, 'usage') and response.usage:
+                self.total_input_tokens += getattr(response.usage, 'prompt_tokens', 0)
+                self.total_output_tokens += getattr(response.usage, 'completion_tokens', 0)
+
+            # Build new compacted history
+            self.messages = build_compacted_history(self.messages, summary)
+            self.last_compaction_tokens = self._estimate_context_tokens()
+
+            return True
+
+        except Exception as e:
+            # Log error but don't fail - just continue with full history
+            print(f"Warning: Compaction failed: {e}")
+            return False
+
+    def _format_history_for_summary(self) -> str:
+        """Format conversation history for summarization."""
+        parts = []
+        for i, msg in enumerate(self.messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+
+            if isinstance(content, list):
+                content = " ".join(
+                    part.get("text", "[non-text content]")
+                    for part in content
+                )
+
+            # Truncate very long messages for summary
+            if len(content) > 5000:
+                content = content[:2000] + f"\n...[{len(content)-4000} chars truncated]...\n" + content[-2000:]
+
+            parts.append(f"[{role.upper()} {i+1}]\n{content}")
+
+        return "\n\n---\n\n".join(parts)
 
     def _execute_tool_calls(self, tool_calls: list) -> list[dict]:
         """Execute tool calls, parallelizing where supported.
