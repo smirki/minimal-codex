@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minimal-codex"
+version = "0.1.0"
+description = "Minimal Codex Agent - A 1:1 replica of Codex CLI's autonomous agent logic"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.0.0",
+]
+
+[project.scripts]
+minimal-codex = "minimal_codex.agent:main"
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/minimal-codex"
+Repository = "https://github.com/YOUR_USERNAME/minimal-codex"
+
+[tool.hatch.build.targets.wheel]
+packages = ["minimal_codex"]
