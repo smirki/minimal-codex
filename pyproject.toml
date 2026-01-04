@@ -17,8 +17,17 @@ dependencies = [
 minimal-codex = "minimal_codex.agent:main"
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/minimal-codex"
-Repository = "https://github.com/YOUR_USERNAME/minimal-codex"
+Homepage = "https://github.com/smirki/minimal-codex"
+Repository = "https://github.com/smirki/minimal-codex"
 
 [tool.hatch.build.targets.wheel]
 packages = ["minimal_codex"]
+
+[tool.hatch.build.targets.wheel.sources]
+"minimal_codex" = "minimal_codex"
+
+[tool.hatch.build]
+include = [
+    "minimal_codex/**/*.py",
+    "minimal_codex/**/*.md",
+]
