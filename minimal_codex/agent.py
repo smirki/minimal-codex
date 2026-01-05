@@ -327,8 +327,8 @@ class CodexAgent:
                 self.total_output_tokens += usage.get("completion_tokens", 0)
                 self.total_cached_tokens += usage.get("cached_tokens", 0)
 
-            # Add to conversation history
-            self.messages.append(assistant_message.model_dump())
+            # Add to conversation history (use explicit serialization per Codex pattern)
+            self.messages.append(self._serialize_assistant_message(assistant_message))
 
             # Record to trajectory
             self._record_assistant(assistant_message, usage)
@@ -738,8 +738,8 @@ NOTES:
                 self.total_output_tokens += usage.get("completion_tokens", 0)
                 self.total_cached_tokens += usage.get("cached_tokens", 0)
 
-            # Add to conversation history
-            self.messages.append(assistant_message.model_dump())
+            # Add to conversation history (use explicit serialization per Codex pattern)
+            self.messages.append(self._serialize_assistant_message(assistant_message))
 
             # Record to trajectory
             self._record_assistant(assistant_message, usage)
@@ -904,11 +904,16 @@ NOTES:
         message = SimpleNamespace(
             content=full_content if full_content else None,
             tool_calls=tool_calls if tool_calls else None,
+            # Note: model_dump is kept for compatibility but _serialize_assistant_message is used
             model_dump=lambda: {
                 "role": "assistant",
-                "content": full_content if full_content else None,
+                "content": None if tool_calls else (full_content if full_content else None),
                 "tool_calls": [
-                    {"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                    {
+                        "id": tc.id,
+                        "type": "function",  # REQUIRED per Codex pattern
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    }
                     for tc in (tool_calls or [])
                 ] if tool_calls else None
             }
@@ -925,6 +930,44 @@ NOTES:
         """Check if error should trigger retry."""
         error_str = str(error).lower()
         return any(x in error_str for x in ['429', '500', '502', '503', 'timeout', 'connection'])
+
+    def _serialize_assistant_message(self, message) -> dict:
+        """Serialize assistant message following Codex's exact Chat Completions format.
+
+        This matches codex-rs/codex-api/src/requests/chat.rs exactly:
+        - "type": "function" MUST be explicitly set in tool_calls
+        - "content": null MUST be explicit (not omitted) when there are tool calls
+        - Arguments kept as strings (already JSON-encoded)
+
+        Args:
+            message: LiteLLM message object with content and optional tool_calls
+
+        Returns:
+            Dict suitable for Chat Completions API
+        """
+        if not message.tool_calls:
+            # Simple text message
+            return {
+                "role": "assistant",
+                "content": message.content,
+            }
+
+        # Message with tool calls - Codex pattern from chat.rs lines 201-224
+        return {
+            "role": "assistant",
+            "content": None,  # Codex explicitly sets null, not missing
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",  # REQUIRED - Codex always sets this explicitly
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        }
 
     # ========================================================================
     # Context Compaction Methods (from Codex's compact.rs)

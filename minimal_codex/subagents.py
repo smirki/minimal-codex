@@ -264,6 +264,44 @@ class SubagentManager:
 
         return tools
 
+    def _serialize_assistant_message(self, message) -> dict:
+        """Serialize assistant message following Codex's exact Chat Completions format.
+
+        This matches codex-rs/codex-api/src/requests/chat.rs exactly:
+        - "type": "function" MUST be explicitly set in tool_calls
+        - "content": null MUST be explicit (not omitted) when there are tool calls
+        - Arguments kept as strings (already JSON-encoded)
+
+        Args:
+            message: LiteLLM message object with content and optional tool_calls
+
+        Returns:
+            Dict suitable for Chat Completions API
+        """
+        if not message.tool_calls:
+            # Simple text message
+            return {
+                "role": "assistant",
+                "content": message.content,
+            }
+
+        # Message with tool calls - Codex pattern from chat.rs lines 201-224
+        return {
+            "role": "assistant",
+            "content": None,  # Codex explicitly sets null, not missing
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",  # REQUIRED - Codex always sets this explicitly
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        }
+
     def _run_subagent(
         self,
         config: SubagentConfig,
@@ -312,7 +350,8 @@ class SubagentManager:
                 return f"Error calling LLM: {str(e)}", SubagentSession(agent_id, config.name, messages)
 
             message = response.choices[0].message
-            messages.append(message.model_dump())
+            # Use explicit serialization per Codex pattern (includes "type": "function")
+            messages.append(self._serialize_assistant_message(message))
 
             # If no tool calls, subagent is done
             if not message.tool_calls:
