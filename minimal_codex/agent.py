@@ -221,6 +221,7 @@ class CodexAgent:
         self.plan_manager: Optional[PlanManager] = None
         self.current_plan_path: Optional[Path] = None
         self.current_task: str = ""  # Track current task for save_plan
+        self.trajectory_output_dir: Optional[Path] = None  # Set by run() for subagent trajectories
         if self.features.enabled(Feature.PLAN_MODE):
             self.plan_manager = PlanManager(self.cwd)
 
@@ -256,19 +257,22 @@ class CodexAgent:
 
         return tools
 
-    def run(self, task: str, max_turns: int = 100, use_plan_mode: bool = False) -> dict:
+    def run(self, task: str, max_turns: int = 100, use_plan_mode: bool = False,
+            trajectory_path: Optional[str] = None) -> dict:
         """Run the agent until task completion.
 
         Args:
             task: The task to perform
             max_turns: Maximum number of turns before stopping
             use_plan_mode: If True and PLAN_MODE enabled, use autonomous planning
+            trajectory_path: Path where main trajectory will be saved (for subagent trajectories)
 
         Returns:
             Dict with output, trajectory, token counts, etc.
         """
         # Track current task for save_plan
         self.current_task = task
+        self.trajectory_output_dir = Path(trajectory_path).parent if trajectory_path else None
 
         # Check if plan mode should be used
         if use_plan_mode and self.features.enabled(Feature.PLAN_MODE) and self.subagent_manager:
@@ -360,27 +364,29 @@ class CodexAgent:
         }
 
     def _run_with_plan_mode(self, task: str, max_turns: int) -> dict:
-        """Run with autonomous planning mode (5-phase workflow).
+        """Run with autonomous planning mode (4-phase workflow).
 
-        Phase 1: Initial Understanding - Launch Explore subagents
-        Phase 2: Multi-Agent Planning - Launch Plan subagents with perspectives
-        Phase 3: Synthesis - Combine perspectives
-        Phase 4: Final Plan - Consolidate into executable plan
-        Phase 5: Execution - Execute with fresh context
+        Phase 1: Exploration - Launch Explore subagents to understand codebase
+        Phase 2: Planning - Launch Plan subagents with different perspectives
+        Phase 3: Synthesis - MAIN AGENT synthesizes all outputs into a plan
+        Phase 4: Execution - Fresh context with plan, execute and update
 
         Args:
             task: The task to perform
             max_turns: Maximum turns for execution phase
 
         Returns:
-            Dict with output, trajectory, token counts, etc.
+            Dict with output, trajectory, token counts, plan_file, subagent_trajectories
         """
         print("[Plan Mode] Starting autonomous planning workflow")
 
-        # ===== PHASE 1: Initial Understanding =====
-        print("[Plan Mode] Phase 1: Initial Understanding")
+        # Track all subagent sessions for trajectory output
+        all_subagent_sessions = []
+        subagent_trajectory_files = []
 
-        # Launch up to 3 Explore subagents in parallel
+        # ===== PHASE 1: Exploration =====
+        print("[Plan Mode] Phase 1: Exploration")
+
         explore_tasks = self._generate_explore_tasks(task)
         explore_results = []
 
@@ -390,29 +396,31 @@ class CodexAgent:
                     self.subagent_manager.invoke,
                     name="Explore",
                     task=explore_task,
-                    max_turns=10,
+                    max_turns=15,
                 )
                 for explore_task in explore_tasks
             ]
-            for future in futures:
-                result, _ = future.result()
+            for i, future in enumerate(futures):
+                result, agent_id, session = future.result()
                 explore_results.append(result)
+                if session:
+                    all_subagent_sessions.append(("explore", i+1, agent_id, session))
+                    print(f"[Plan Mode] Explore subagent {i+1} completed: {agent_id}")
 
         # Combine exploration context
         exploration_context = "\n\n".join([
             f"### Exploration {i+1}\n{result}"
             for i, result in enumerate(explore_results)
         ])
-        print(f"[Plan Mode] Completed {len(explore_results)} exploration(s)")
+        print(f"[Plan Mode] Phase 1 complete: {len(explore_results)} exploration(s)")
 
         # Record exploration phase to trajectory
         self._record_message("system", "[Plan Mode] Phase 1: Exploration completed")
-        self._record_message("assistant", f"Exploration findings:\n{exploration_context[:2000]}...")
+        self._record_message("assistant", f"Exploration findings:\n{exploration_context}")
 
-        # ===== PHASE 2: Multi-Agent Planning =====
-        print("[Plan Mode] Phase 2: Multi-Agent Planning")
+        # ===== PHASE 2: Planning =====
+        print("[Plan Mode] Phase 2: Planning")
 
-        # Generate perspectives based on task type
         perspectives = self._generate_planning_perspectives(task)
         plan_results = []
 
@@ -430,46 +438,224 @@ class CodexAgent:
 ## Your Perspective
 {perspective}
 
-Explore the codebase thoroughly with this perspective, then call save_plan with your steps and critical_files.""",
+Based on the exploration context and your perspective, provide:
+1. Your analysis of the task
+2. Key files/components involved
+3. Recommended implementation steps (numbered list)
+4. Potential risks or edge cases
+
+Be thorough but concise.""",
                     max_turns=20,
                 )
                 for perspective in perspectives
             ]
-            for future in futures:
-                result, _ = future.result()
+            for i, future in enumerate(futures):
+                result, agent_id, session = future.result()
                 plan_results.append(result)
+                if session:
+                    all_subagent_sessions.append(("plan", i+1, agent_id, session))
+                    print(f"[Plan Mode] Plan subagent {i+1} completed: {agent_id}")
 
-        print(f"[Plan Mode] Completed {len(plan_results)} planning perspective(s)")
+        print(f"[Plan Mode] Phase 2 complete: {len(plan_results)} planning perspective(s)")
 
         # Record planning phase to trajectory
         self._record_message("system", "[Plan Mode] Phase 2: Planning completed")
 
-        # ===== PHASE 3: Synthesis =====
-        print("[Plan Mode] Phase 3: Synthesis")
+        # ===== PHASE 3: Synthesis (MAIN AGENT creates the plan) =====
+        print("[Plan Mode] Phase 3: Synthesis (Main Agent)")
 
-        # Check if a plan was saved
-        if not self.plan_manager.current_plan_path:
-            print("[Plan Mode] Warning: No plan was saved, falling back to standard execution")
+        # Save subagent trajectories to files
+        subagent_trajectory_files = self._save_subagent_trajectories(all_subagent_sessions)
+        for traj_file in subagent_trajectory_files:
+            print(f"[Plan Mode] Subagent trajectory: {traj_file}")
+
+        # Main agent synthesizes all outputs into a coherent plan
+        synthesis_prompt = f"""## Task
+{task}
+
+## Exploration Findings
+{exploration_context}
+
+## Planning Perspectives
+{chr(10).join([f"### Perspective {i+1}{chr(10)}{result}" for i, result in enumerate(plan_results)])}
+
+## Your Job
+You are the MAIN AGENT. Synthesize all the exploration findings and planning perspectives above into a single, coherent implementation plan.
+
+Create a plan with:
+1. Clear, numbered steps (each step should be actionable)
+2. List of critical files that will be modified or created
+3. Any important notes or warnings
+
+Output your plan in this exact format:
+STEPS:
+1. [First step]
+2. [Second step]
+...
+
+CRITICAL_FILES:
+- file1.py
+- file2.py
+...
+
+NOTES:
+[Any important notes]"""
+
+        # Call LLM to synthesize
+        try:
+            synthesis_response = completion(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a planning agent. Synthesize the provided information into a clear, actionable plan."},
+                    {"role": "user", "content": synthesis_prompt},
+                ],
+            )
+            synthesis_result = synthesis_response.choices[0].message.content or ""
+
+            # Track usage
+            if hasattr(synthesis_response, 'usage') and synthesis_response.usage:
+                self.total_input_tokens += getattr(synthesis_response.usage, 'prompt_tokens', 0)
+                self.total_output_tokens += getattr(synthesis_response.usage, 'completion_tokens', 0)
+
+        except Exception as e:
+            print(f"[Plan Mode] Synthesis failed: {e}, falling back to standard execution")
             return self._run_standard(task, max_turns)
 
-        # ===== PHASE 4: Final Plan =====
-        print("[Plan Mode] Phase 4: Final Plan")
+        # Parse synthesis result and create plan file
+        steps, critical_files = self._parse_synthesis_result(synthesis_result)
 
-        self.current_plan_path = self.plan_manager.current_plan_path
-        print(f"[Plan Mode] Plan saved to: {self.current_plan_path}")
+        if not steps:
+            print("[Plan Mode] No steps extracted from synthesis, falling back to standard")
+            return self._run_standard(task, max_turns)
 
-        # Record plan to trajectory
-        plan_data = self.plan_manager.load_plan(self.current_plan_path)
-        self._record_message("system", f"[Plan Mode] Final plan created with {len(plan_data['steps'])} steps")
+        # Create plan file via PlanManager (saves to .tessa/plans/)
+        self.current_plan_path = self.plan_manager.create_plan(
+            task=task,
+            steps=steps,
+            critical_files=critical_files,
+        )
+        print(f"[Plan Mode] Plan created: {self.current_plan_path}")
 
-        # ===== PHASE 5: Execution =====
-        print("[Plan Mode] Phase 5: Execution")
+        # Also copy plan to output directory for debugging (next to trajectory.json)
+        plan_output_path = None
+        if self.trajectory_output_dir:
+            plan_output_path = self.trajectory_output_dir / "plan.md"
+            import shutil
+            shutil.copy(self.current_plan_path, plan_output_path)
+            print(f"[Plan Mode] Plan copied to: {plan_output_path}")
+
+        # Record synthesis to trajectory
+        self._record_message("system", f"[Plan Mode] Phase 3: Plan synthesized with {len(steps)} steps")
+        self._record_message("assistant", f"Plan created at: {self.current_plan_path}\n\nSteps:\n" +
+                            "\n".join([f"{i+1}. {s['step']}" for i, s in enumerate(steps)]))
 
         # Clear context for execution (fresh start)
         self.messages = []
 
-        # Execute with plan in context
-        return self._execute_with_plan(task, max_turns)
+        # Execute with plan in context, passing subagent info
+        result = self._execute_with_plan(task, max_turns)
+
+        # Add plan file and subagent trajectories to result
+        result["plan_file"] = str(self.current_plan_path)
+        result["subagent_trajectories"] = subagent_trajectory_files
+
+        return result
+
+    def _save_subagent_trajectories(self, sessions: list) -> list[str]:
+        """Save subagent sessions to trajectory files in ATIF format.
+
+        Saves next to the main trajectory.json file with names like:
+        - trajectory_explore_1.json
+        - trajectory_plan_1.json
+
+        Args:
+            sessions: List of (type, index, agent_id, session) tuples
+
+        Returns:
+            List of trajectory file paths
+        """
+        trajectory_files = []
+
+        # Use the same directory as main trajectory, or fall back to .tessa/trajectories
+        if self.trajectory_output_dir:
+            trajectories_dir = self.trajectory_output_dir
+        else:
+            trajectories_dir = self.cwd / ".tessa" / "trajectories"
+
+        trajectories_dir.mkdir(parents=True, exist_ok=True)
+
+        for subagent_type, index, agent_id, session in sessions:
+            # Convert session messages to ATIF format
+            atif_trajectory = convert_to_atif(
+                trajectory=session.messages,
+                model_name=self.model,
+                agent_name=f"minimal-codex-{subagent_type}",
+                agent_version="0.3.0",
+            )
+
+            # Add subagent metadata
+            atif_trajectory["subagent"] = {
+                "type": subagent_type,
+                "index": index,
+                "agent_id": agent_id,
+            }
+
+            filename = f"trajectory_{subagent_type}_{index}.json"
+            filepath = trajectories_dir / filename
+            filepath.write_text(json.dumps(atif_trajectory, indent=2, default=str), encoding="utf-8")
+            trajectory_files.append(str(filepath))
+
+        return trajectory_files
+
+    def _parse_synthesis_result(self, result: str) -> tuple[list, list]:
+        """Parse the synthesis LLM output into steps and critical files.
+
+        Args:
+            result: Raw LLM output with STEPS: and CRITICAL_FILES: sections
+
+        Returns:
+            (steps, critical_files) - List of step dicts and list of file paths
+        """
+        steps = []
+        critical_files = []
+
+        lines = result.split("\n")
+        current_section = None
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            if line_stripped.upper().startswith("STEPS:"):
+                current_section = "steps"
+                continue
+            elif line_stripped.upper().startswith("CRITICAL_FILES:"):
+                current_section = "files"
+                continue
+            elif line_stripped.upper().startswith("NOTES:"):
+                current_section = "notes"
+                continue
+
+            if current_section == "steps" and line_stripped:
+                # Parse numbered step like "1. Do something"
+                if line_stripped[0].isdigit() and "." in line_stripped:
+                    step_text = line_stripped.split(".", 1)[-1].strip()
+                    if step_text:
+                        steps.append({"step": step_text, "status": "pending"})
+                elif line_stripped.startswith("-"):
+                    step_text = line_stripped[1:].strip()
+                    if step_text:
+                        steps.append({"step": step_text, "status": "pending"})
+
+            elif current_section == "files" and line_stripped:
+                # Parse file path like "- file.py" or just "file.py"
+                if line_stripped.startswith("-"):
+                    file_path = line_stripped[1:].strip().strip("`")
+                else:
+                    file_path = line_stripped.strip("`")
+                if file_path and not file_path.upper().startswith("NOTES"):
+                    critical_files.append(file_path)
+
+        return steps, critical_files
 
     def _generate_explore_tasks(self, task: str) -> list[str]:
         """Generate exploration tasks based on the main task."""
@@ -1001,12 +1187,17 @@ Explore the codebase thoroughly with this perspective, then call save_plan with 
         max_turns = args.get("max_turns", 10)
         resume_id = args.get("resume_id")
 
-        result, agent_id = self.subagent_manager.invoke(
+        result, agent_id, session = self.subagent_manager.invoke(
             name=name,
             task=task,
             max_turns=max_turns,
             resume_id=resume_id,
         )
+
+        # Save trajectory for debugging (session is already saved by invoke)
+        if session:
+            traj_path = self.subagent_manager.transcripts_dir / f"agent-{agent_id}.jsonl"
+            print(f"[Subagent] Trajectory saved: {traj_path}")
 
         # Include agent_id for potential resumption
         return f"{result}\n\n[agent_id: {agent_id}]"
@@ -1078,7 +1269,8 @@ Explore the codebase thoroughly with this perspective, then call save_plan with 
 def convert_to_atif(
     trajectory: list[dict],
     model_name: str,
-    agent_version: str = "0.1.0"
+    agent_version: str = "0.1.0",
+    agent_name: str = "minimal-codex",
 ) -> dict:
     """Convert internal trajectory to ATIF v1.4 format for Harbor compatibility.
 
@@ -1086,6 +1278,7 @@ def convert_to_atif(
         trajectory: Internal trajectory list
         model_name: Model name used
         agent_version: Version of this agent
+        agent_name: Name of the agent (for subagent trajectories)
 
     Returns:
         ATIF-formatted trajectory dict
@@ -1203,7 +1396,7 @@ def convert_to_atif(
         "schema_version": "ATIF-v1.4",
         "session_id": str(uuid.uuid4()),
         "agent": {
-            "name": "minimal-codex",
+            "name": agent_name,
             "version": agent_version,
             "model_name": model_name,
             "extra": {"framework": "minimal-codex"}
@@ -1257,7 +1450,12 @@ def main():
 
     # Run the agent
     agent = CodexAgent(model=args.model, cwd=args.cwd, features=features)
-    result = agent.run(args.task, max_turns=args.max_turns, use_plan_mode=args.plan)
+    result = agent.run(
+        args.task,
+        max_turns=args.max_turns,
+        use_plan_mode=args.plan,
+        trajectory_path=args.trajectory,
+    )
 
     # Build output
     output = {
@@ -1269,6 +1467,16 @@ def main():
             "output_tokens": result.get("output_tokens", 0),
         })
     }
+
+    # Add plan mode artifacts if present
+    if result.get("plan_file"):
+        output["plan_file"] = result["plan_file"]
+        print(f"[Plan Mode] Plan file: {result['plan_file']}")
+    if result.get("subagent_trajectories"):
+        output["subagent_trajectories"] = result["subagent_trajectories"]
+        print(f"[Plan Mode] Subagent trajectories: {len(result['subagent_trajectories'])} files")
+        for traj in result["subagent_trajectories"]:
+            print(f"  - {traj}")
 
     # Write output JSON
     if args.output:

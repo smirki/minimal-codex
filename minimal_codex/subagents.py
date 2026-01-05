@@ -198,7 +198,7 @@ class SubagentManager:
         task: str,
         max_turns: int = 10,
         resume_id: Optional[str] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, "SubagentSession"]:
         """Invoke a subagent by name.
 
         Args:
@@ -208,11 +208,11 @@ class SubagentManager:
             resume_id: Optional agent_id to resume previous session
 
         Returns:
-            (result, agent_id) - Result text and agent_id for potential resumption
+            (result, agent_id, session) - Result text, agent_id, and full session for trajectory
         """
         if name not in self.configs:
             available = list(self.configs.keys())
-            return f"Error: Unknown subagent '{name}'. Available: {available}", ""
+            return f"Error: Unknown subagent '{name}'. Available: {available}", "", None
 
         config = self.configs[name]
 
@@ -236,7 +236,7 @@ class SubagentManager:
         # Save session for potential resumption
         final_session.save(self.transcripts_dir)
 
-        return result, agent_id
+        return result, agent_id, final_session
 
     def _get_tools_for_subagent(
         self,
