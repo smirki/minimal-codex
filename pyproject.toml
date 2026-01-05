@@ -4,13 +4,28 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minimal-codex"
-version = "0.1.0"
+version = "0.2.0"
 description = "Minimal Codex Agent - A 1:1 replica of Codex CLI's autonomous agent logic"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "litellm>=1.0.0",
+]
+
+[project.optional-dependencies]
+# PTY shell support (for exec_command/write_stdin tools)
+pty-unix = ["pexpect>=4.8.0"]
+pty-windows = ["pywinpty>=2.0.0"]
+
+# Web search support
+web = ["duckduckgo-search>=4.0.0"]
+
+# All features
+all = [
+    "pexpect>=4.8.0; sys_platform != 'win32'",
+    "pywinpty>=2.0.0; sys_platform == 'win32'",
+    "duckduckgo-search>=4.0.0",
 ]
 
 [project.scripts]

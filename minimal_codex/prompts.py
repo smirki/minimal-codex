@@ -1,12 +1,12 @@
 """System prompts for the Minimal Codex Agent.
 
-Loads the exact Codex prompt from prompt.md for Terminal-Bench compatibility.
+Loads the exact Codex prompt from prompts/system_prompt.md for Terminal-Bench compatibility.
 """
 
 from pathlib import Path
 
 # Load prompt from file at module load time
-_PROMPT_FILE = Path(__file__).parent / "prompt.md"
+_PROMPT_FILE = Path(__file__).parent / "prompts" / "system_prompt.md"
 SYSTEM_PROMPT = _PROMPT_FILE.read_text(encoding="utf-8")
 
 # Environment context template (matching Codex's format)

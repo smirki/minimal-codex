@@ -6,8 +6,16 @@ These match Codex CLI's exact tool specifications.
 import subprocess
 import re
 import fnmatch
+import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+# Optional web search support
+try:
+    from duckduckgo_search import DDGS
+    HAS_WEB_SEARCH = True
+except ImportError:
+    HAS_WEB_SEARCH = False
 
 # Tool definitions in OpenAI function calling format
 
@@ -166,20 +174,150 @@ GREP_FILES_TOOL = {
     }
 }
 
-# All tools combined
-TOOLS = [
+# Web search tool (matches Codex's Feature::WebSearchRequest)
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "Search the web and return relevant results with titles, snippets, and URLs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query"
+                },
+                "num_results": {
+                    "type": "number",
+                    "description": "Number of results to return (default 5, max 10)"
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# Save plan tool (for Plan subagent to save its implementation plan)
+SAVE_PLAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "save_plan",
+        "description": "Save the implementation plan. Call this when you have completed the planning phase.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "description": "Implementation steps (5-7 words each)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending"]}
+                        },
+                        "required": ["step", "status"],
+                        "additionalProperties": False
+                    }
+                },
+                "critical_files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "File paths critical for implementation (3-5 files)"
+                }
+            },
+            "required": ["steps", "critical_files"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# PTY execution tools (matches Codex's unified_exec when Feature::UnifiedExec enabled)
+EXEC_COMMAND_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "exec_command",
+        "description": """Execute a command in a persistent PTY shell session.
+
+Unlike shell_command, this creates an interactive PTY session that persists
+across multiple calls. Use for:
+- Interactive commands that expect TTY input
+- Long-running processes (servers, watchers)
+- Commands that need persistent state (environment variables, working directory)
+
+Returns a process_id if the command is still running, which can be used with
+write_stdin to send additional input.""",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Command and arguments as array, e.g. ['bash', '-c', 'echo hello']"
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory (optional)"
+                },
+                "yield_time_ms": {
+                    "type": "number",
+                    "description": "Time to wait for output in milliseconds (default 2500, max 30000)"
+                }
+            },
+            "required": ["command"],
+            "additionalProperties": False
+        }
+    }
+}
+
+WRITE_STDIN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "write_stdin",
+        "description": """Write input to a running PTY session.
+
+Use this to interact with a process started via exec_command. The process_id
+is returned from the initial exec_command call.""",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "process_id": {
+                    "type": "string",
+                    "description": "The process ID from exec_command"
+                },
+                "input": {
+                    "type": "string",
+                    "description": "Input to send (include \\n for Enter)"
+                },
+                "yield_time_ms": {
+                    "type": "number",
+                    "description": "Time to wait for output in milliseconds (default 2500)"
+                }
+            },
+            "required": ["process_id", "input"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# Core tools (always available)
+CORE_TOOLS = [
     SHELL_COMMAND_TOOL,
     APPLY_PATCH_TOOL,
     UPDATE_PLAN_TOOL,
     READ_FILE_TOOL,
     LIST_DIR_TOOL,
     GREP_FILES_TOOL,
+    SAVE_PLAN_TOOL,
 ]
 
+# All tools combined (for backward compatibility)
+TOOLS = CORE_TOOLS.copy()
+
 # Tools that can run in parallel (read-only or idempotent)
-PARALLEL_TOOLS = {"update_plan", "read_file", "list_dir", "grep_files"}
+PARALLEL_TOOLS = {"update_plan", "read_file", "list_dir", "grep_files", "web_search", "save_plan"}
 # Tools that need exclusive access (side effects)
-SEQUENTIAL_TOOLS = {"shell_command", "apply_patch"}
+SEQUENTIAL_TOOLS = {"shell_command", "apply_patch", "exec_command", "write_stdin", "invoke_subagent"}
 
 # Truncation settings
 MAX_TOOL_OUTPUT_BYTES = 10000
@@ -354,3 +492,153 @@ def update_plan(args: dict, current_plan: list) -> tuple[str, list]:
         return "Warning: Multiple steps marked in_progress", new_plan
 
     return (f"Plan updated. {explanation}" if explanation else "Plan updated."), new_plan
+
+
+def execute_web_search(args: dict) -> str:
+    """Execute web search using DuckDuckGo (free, no API key required).
+
+    Matches Codex's Feature::WebSearchRequest functionality.
+    """
+    if not HAS_WEB_SEARCH:
+        return "Error: Web search not available. Install with: pip install duckduckgo-search"
+
+    query = args["query"]
+    num_results = min(args.get("num_results", 5), 10)
+
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=num_results))
+
+        if not results:
+            return f"No results found for: {query}"
+
+        # Format results similar to how Codex would present them
+        formatted = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "No title")
+            body = r.get("body", "No description")
+            href = r.get("href", "")
+            formatted.append(f"{i}. {title}\n   {body}\n   URL: {href}")
+
+        return "\n\n".join(formatted)
+
+    except Exception as e:
+        return f"Web search error: {str(e)}"
+
+
+def create_invoke_subagent_tool(available_subagents: list[dict]) -> dict:
+    """Create invoke_subagent tool with dynamic subagent list.
+
+    Args:
+        available_subagents: List of {"name": str, "description": str} dicts
+
+    Returns:
+        Tool definition dict for invoke_subagent
+    """
+    # Build description with available subagents
+    subagent_list = "\n".join(
+        f"  - {s['name']}: {s['description']}"
+        for s in available_subagents
+    )
+
+    return {
+        "type": "function",
+        "function": {
+            "name": "invoke_subagent",
+            "description": f"""Invoke a specialized subagent to handle a specific task.
+
+Subagents run in isolated context and return their findings. Use them to:
+- Explore codebase without polluting your context
+- Get specialized perspectives (security, performance, etc.)
+- Parallelize research across multiple focuses
+
+IMPORTANT: Subagents cannot invoke other subagents (single-level delegation).
+
+Available subagents:
+{subagent_list}
+
+Custom subagents can be added via .tessa/agents/*.md files.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the subagent to invoke (e.g., 'Plan', 'Explore', 'general-purpose')"
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "The specific task for the subagent to accomplish"
+                    },
+                    "max_turns": {
+                        "type": "number",
+                        "description": "Maximum turns before subagent returns (default 10)"
+                    },
+                    "resume_id": {
+                        "type": "string",
+                        "description": "Optional agent_id to resume a previous session"
+                    }
+                },
+                "required": ["name", "task"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+
+def execute_tool(
+    name: str,
+    args: dict,
+    cwd: Path,
+    plan_manager: Optional[Any] = None,
+    current_task: str = "",
+) -> str:
+    """Execute a tool by name with given arguments.
+
+    This is the central tool dispatcher used by both the main agent
+    and subagents for executing tool calls.
+
+    Args:
+        name: Tool name
+        args: Tool arguments dict
+        cwd: Working directory
+        plan_manager: Optional PlanManager for save_plan tool
+        current_task: Current task description (for save_plan)
+
+    Returns:
+        Tool output string
+    """
+    try:
+        if name == "shell_command":
+            output = execute_shell(args, cwd)
+        elif name == "read_file":
+            output = read_file(args, cwd)
+        elif name == "list_dir":
+            output = list_dir(args, cwd)
+        elif name == "grep_files":
+            output = grep_files(args, cwd)
+        elif name == "apply_patch":
+            # Import here to avoid circular imports
+            from .apply_patch import apply_patch
+            output = apply_patch(args.get("patch", ""), cwd)
+        elif name == "web_search":
+            output = execute_web_search(args)
+        elif name == "update_plan":
+            # Return simple acknowledgment - actual plan tracking is done elsewhere
+            output = "Plan update acknowledged"
+        elif name == "save_plan":
+            # Handle save_plan if plan_manager is provided
+            if plan_manager is None:
+                output = "Error: Plan mode is not enabled"
+            else:
+                path = plan_manager.create_plan(
+                    task=current_task,
+                    steps=args.get("steps", []),
+                    critical_files=args.get("critical_files", []),
+                )
+                output = f"Plan saved to: {path}"
+        else:
+            output = f"Unknown tool: {name}"
+    except Exception as e:
+        output = f"Error executing {name}: {str(e)}"
+
+    return truncate_output(output)
