@@ -364,202 +364,109 @@ class CodexAgent:
         }
 
     def _run_with_plan_mode(self, task: str, max_turns: int) -> dict:
-        """Run with autonomous planning mode (4-phase workflow).
+        """Plan mode - just adds read-only planning prompt to system message.
 
-        Phase 1: Exploration - Launch Explore subagents to understand codebase
-        Phase 2: Planning - Launch Plan subagents with different perspectives
-        Phase 3: Synthesis - MAIN AGENT synthesizes all outputs into a plan
-        Phase 4: Execution - Fresh context with plan, execute and update
+        Following Claude Code's pattern: plan mode is just a prompt, not phases.
+        The main agent decides when/if to use subagents.
 
         Args:
             task: The task to perform
-            max_turns: Maximum turns for execution phase
+            max_turns: Maximum turns
 
         Returns:
-            Dict with output, trajectory, token counts, plan_file, subagent_trajectories
+            Dict with output, trajectory, token counts, etc.
         """
-        print("[Plan Mode] Starting autonomous planning workflow")
+        from .prompt_templates import load_prompt_template
 
-        # Track all subagent sessions for trajectory output
-        all_subagent_sessions = []
-        subagent_trajectory_files = []
+        print("[Plan Mode] Adding planning guidance to system prompt")
 
-        # ===== PHASE 1: Exploration =====
-        print("[Plan Mode] Phase 1: Exploration")
+        # Initialize conversation with context
+        self.messages = build_initial_messages(self.cwd, task)
 
-        explore_tasks = self._generate_explore_tasks(task)
-        explore_results = []
+        # Load planning guidance prompt and add to system message
+        planning_guidance = load_prompt_template("plan_mode_main")
+        self.messages[0]["content"] += "\n\n" + planning_guidance
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                executor.submit(
-                    self.subagent_manager.invoke,
-                    name="Explore",
-                    task=explore_task,
-                    max_turns=15,
-                )
-                for explore_task in explore_tasks
-            ]
-            for i, future in enumerate(futures):
-                result, agent_id, session = future.result()
-                explore_results.append(result)
-                if session:
-                    all_subagent_sessions.append(("explore", i+1, agent_id, session))
-                    print(f"[Plan Mode] Explore subagent {i+1} completed: {agent_id}")
+        # Record initial messages to trajectory
+        for msg in self.messages:
+            self._record_message(msg["role"], msg["content"])
 
-        # Combine exploration context
-        exploration_context = "\n\n".join([
-            f"### Exploration {i+1}\n{result}"
-            for i, result in enumerate(explore_results)
-        ])
-        print(f"[Plan Mode] Phase 1 complete: {len(explore_results)} exploration(s)")
+        # Run standard loop - main agent makes all decisions
+        return self._run_standard_loop(max_turns)
 
-        # Record exploration phase to trajectory
-        self._record_message("system", "[Plan Mode] Phase 1: Exploration completed")
-        self._record_message("assistant", f"Exploration findings:\n{exploration_context}")
+    def _run_standard_loop(self, max_turns: int) -> dict:
+        """Run the standard agent loop (shared by both modes).
 
-        # ===== PHASE 2: Planning =====
-        print("[Plan Mode] Phase 2: Planning")
+        Args:
+            max_turns: Maximum number of turns
 
-        perspectives = self._generate_planning_perspectives(task)
-        plan_results = []
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        for turn in range(max_turns):
+            # Check for compaction before API call
+            if self.compact_conversation():
+                print(f"[Compacted context at turn {turn}]")
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                executor.submit(
-                    self.subagent_manager.invoke,
-                    name="Plan",
-                    task=f"""## Task
-{task}
+            try:
+                response = self._call_api_with_retry()
+            except Exception as e:
+                return {
+                    "error": str(e),
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
 
-## Exploration Context
-{exploration_context}
+            assistant_message = response.choices[0].message
 
-## Your Perspective
-{perspective}
+            # Track token usage
+            usage = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                    "cached_tokens": getattr(response.usage, 'cached_tokens', 0) if hasattr(response.usage, 'cached_tokens') else 0,
+                }
+                self.total_input_tokens += usage.get("prompt_tokens", 0)
+                self.total_output_tokens += usage.get("completion_tokens", 0)
+                self.total_cached_tokens += usage.get("cached_tokens", 0)
 
-Based on the exploration context and your perspective, provide:
-1. Your analysis of the task
-2. Key files/components involved
-3. Recommended implementation steps (numbered list)
-4. Potential risks or edge cases
+            # Add to conversation history
+            self.messages.append(self._serialize_assistant_message(assistant_message))
 
-Be thorough but concise.""",
-                    max_turns=20,
-                )
-                for perspective in perspectives
-            ]
-            for i, future in enumerate(futures):
-                result, agent_id, session = future.result()
-                plan_results.append(result)
-                if session:
-                    all_subagent_sessions.append(("plan", i+1, agent_id, session))
-                    print(f"[Plan Mode] Plan subagent {i+1} completed: {agent_id}")
+            # Record to trajectory
+            self._record_assistant(assistant_message, usage)
 
-        print(f"[Plan Mode] Phase 2 complete: {len(plan_results)} planning perspective(s)")
+            # Check if done (no tool calls)
+            if not assistant_message.tool_calls:
+                return {
+                    "output": assistant_message.content,
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "cached_tokens": self.total_cached_tokens,
+                    "usage": {
+                        "input_tokens": self.total_input_tokens,
+                        "cached_input_tokens": self.total_cached_tokens,
+                        "output_tokens": self.total_output_tokens,
+                    }
+                }
 
-        # Record planning phase to trajectory
-        self._record_message("system", "[Plan Mode] Phase 2: Planning completed")
+            # Execute tool calls
+            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
 
-        # ===== PHASE 3: Synthesis (MAIN AGENT creates the plan) =====
-        print("[Plan Mode] Phase 3: Synthesis (Main Agent)")
+            # Add results to conversation and trajectory
+            for result in tool_results:
+                self.messages.append(result)
+                self._record_tool_result(result["tool_call_id"], result["content"])
 
-        # Save subagent trajectories to files
-        subagent_trajectory_files = self._save_subagent_trajectories(all_subagent_sessions)
-        for traj_file in subagent_trajectory_files:
-            print(f"[Plan Mode] Subagent trajectory: {traj_file}")
-
-        # Main agent synthesizes all outputs into a coherent plan
-        synthesis_prompt = f"""## Task
-{task}
-
-## Exploration Findings
-{exploration_context}
-
-## Planning Perspectives
-{chr(10).join([f"### Perspective {i+1}{chr(10)}{result}" for i, result in enumerate(plan_results)])}
-
-## Your Job
-You are the MAIN AGENT. Synthesize all the exploration findings and planning perspectives above into a single, coherent implementation plan.
-
-Create a plan with:
-1. Clear, numbered steps (each step should be actionable)
-2. List of critical files that will be modified or created
-3. Any important notes or warnings
-
-Output your plan in this exact format:
-STEPS:
-1. [First step]
-2. [Second step]
-...
-
-CRITICAL_FILES:
-- file1.py
-- file2.py
-...
-
-NOTES:
-[Any important notes]"""
-
-        # Call LLM to synthesize
-        try:
-            synthesis_response = completion(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a planning agent. Synthesize the provided information into a clear, actionable plan."},
-                    {"role": "user", "content": synthesis_prompt},
-                ],
-            )
-            synthesis_result = synthesis_response.choices[0].message.content or ""
-
-            # Track usage
-            if hasattr(synthesis_response, 'usage') and synthesis_response.usage:
-                self.total_input_tokens += getattr(synthesis_response.usage, 'prompt_tokens', 0)
-                self.total_output_tokens += getattr(synthesis_response.usage, 'completion_tokens', 0)
-
-        except Exception as e:
-            print(f"[Plan Mode] Synthesis failed: {e}, falling back to standard execution")
-            return self._run_standard(task, max_turns)
-
-        # Parse synthesis result and create plan file
-        steps, critical_files = self._parse_synthesis_result(synthesis_result)
-
-        if not steps:
-            print("[Plan Mode] No steps extracted from synthesis, falling back to standard")
-            return self._run_standard(task, max_turns)
-
-        # Create plan file via PlanManager (saves to .tessa/plans/)
-        self.current_plan_path = self.plan_manager.create_plan(
-            task=task,
-            steps=steps,
-            critical_files=critical_files,
-        )
-        print(f"[Plan Mode] Plan created: {self.current_plan_path}")
-
-        # Also copy plan to output directory for debugging (next to trajectory.json)
-        plan_output_path = None
-        if self.trajectory_output_dir:
-            plan_output_path = self.trajectory_output_dir / "plan.md"
-            import shutil
-            shutil.copy(self.current_plan_path, plan_output_path)
-            print(f"[Plan Mode] Plan copied to: {plan_output_path}")
-
-        # Record synthesis to trajectory
-        self._record_message("system", f"[Plan Mode] Phase 3: Plan synthesized with {len(steps)} steps")
-        self._record_message("assistant", f"Plan created at: {self.current_plan_path}\n\nSteps:\n" +
-                            "\n".join([f"{i+1}. {s['step']}" for i, s in enumerate(steps)]))
-
-        # Clear context for execution (fresh start)
-        self.messages = []
-
-        # Execute with plan in context, passing subagent info
-        result = self._execute_with_plan(task, max_turns)
-
-        # Add plan file and subagent trajectories to result
-        result["plan_file"] = str(self.current_plan_path)
-        result["subagent_trajectories"] = subagent_trajectory_files
-
-        return result
+        return {
+            "error": "Max turns exceeded",
+            "trajectory": self.trajectory,
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+        }
 
     def _save_subagent_trajectories(self, sessions: list) -> list[str]:
         """Save subagent sessions to trajectory files in ATIF format.
@@ -657,37 +564,6 @@ NOTES:
 
         return steps, critical_files
 
-    def _generate_explore_tasks(self, task: str) -> list[str]:
-        """Generate exploration tasks based on the main task."""
-        return [
-            f"Search for existing implementations related to: {task}. Look for similar features, patterns, and conventions.",
-            f"Explore the project structure and architecture relevant to: {task}. Identify key directories and dependencies.",
-            f"Find testing patterns and examples related to: {task}. Look for test files and testing conventions.",
-        ]
-
-    def _generate_planning_perspectives(self, task: str) -> list[str]:
-        """Generate planning perspectives based on task type."""
-        task_lower = task.lower()
-
-        if any(word in task_lower for word in ["fix", "bug", "error", "issue"]):
-            # Bug fix perspectives
-            return [
-                "Focus on ROOT CAUSE analysis. Identify the fundamental issue and fix it at the source.",
-                "Focus on PREVENTION. Design a solution that prevents this class of bug from recurring.",
-            ]
-        elif any(word in task_lower for word in ["refactor", "cleanup", "reorganize"]):
-            # Refactoring perspectives
-            return [
-                "Focus on MINIMAL CHANGE. Make the smallest possible changes to achieve the goal.",
-                "Focus on CLEAN ARCHITECTURE. Design the ideal structure even if it requires more changes.",
-            ]
-        else:
-            # New feature perspectives (default)
-            return [
-                "Focus on SIMPLICITY. Choose the most straightforward implementation that works.",
-                "Focus on MAINTAINABILITY. Design for long-term ease of modification and extension.",
-                "Focus on EXISTING PATTERNS. Follow conventions already established in the codebase.",
-            ]
 
     def _execute_with_plan(self, task: str, max_turns: int) -> dict:
         """Execute task with plan loaded in context.
@@ -1217,7 +1093,7 @@ NOTES:
         """Invoke a subagent to handle a specialized task.
 
         Args:
-            args: Tool arguments with name, task, optional max_turns, resume_id
+            args: Tool arguments with name, task, optional max_turns, resume_id, context
 
         Returns:
             Subagent result with agent_id for potential resumption
@@ -1229,12 +1105,14 @@ NOTES:
         task = args.get("task", "")
         max_turns = args.get("max_turns", 10)
         resume_id = args.get("resume_id")
+        context = args.get("context")  # Optional context from main agent
 
         result, agent_id, session = self.subagent_manager.invoke(
             name=name,
             task=task,
             max_turns=max_turns,
             resume_id=resume_id,
+            context=context,
         )
 
         # Save trajectory for debugging (session is already saved by invoke)

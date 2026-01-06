@@ -576,6 +576,10 @@ Custom subagents can be added via .tessa/agents/*.md files.""",
                     "resume_id": {
                         "type": "string",
                         "description": "Optional agent_id to resume a previous session"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional context/findings to share with subagent so they don't re-explore. Include any relevant information you've gathered."
                     }
                 },
                 "required": ["name", "task"],

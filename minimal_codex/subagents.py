@@ -64,8 +64,10 @@ class SubagentSession:
 def get_builtin_subagents() -> dict[str, SubagentConfig]:
     """Get built-in subagent configurations.
 
-    All prompts are loaded from prompts/ folder to ensure consistency
-    and easy maintenance.
+    All prompts are loaded from prompts/subagent/ folder to ensure:
+    - Subagent framing ("You are a SUBAGENT, return quickly")
+    - Early stopping instructions
+    - Context awareness
     """
     return {
         "general-purpose": SubagentConfig(
@@ -73,21 +75,21 @@ def get_builtin_subagents() -> dict[str, SubagentConfig]:
             description="General-purpose agent for complex multi-step tasks, code search, and research",
             tools=None,  # All tools
             model="inherit",
-            system_prompt=load_prompt_template("general_purpose"),
+            system_prompt=load_prompt_template("subagent/general_purpose"),
         ),
         "Plan": SubagentConfig(
             name="Plan",
             description="Read-only exploration for creating implementation plans",
-            tools=["read_file", "list_dir", "grep_files", "shell_command", "save_plan"],
+            tools=["read_file", "list_dir", "grep_files", "shell_command"],  # Read-only tools only
             model="inherit",
-            system_prompt=load_prompt_template("plan_mode"),
+            system_prompt=load_prompt_template("subagent/plan"),
         ),
         "Explore": SubagentConfig(
             name="Explore",
             description="Fast codebase exploration - find files, search code, answer questions",
             tools=["read_file", "list_dir", "grep_files"],
             model="inherit",
-            system_prompt=load_prompt_template("explore"),
+            system_prompt=load_prompt_template("subagent/explore"),
         ),
     }
 
@@ -198,14 +200,16 @@ class SubagentManager:
         task: str,
         max_turns: int = 10,
         resume_id: Optional[str] = None,
+        context: Optional[str] = None,
     ) -> tuple[str, str, "SubagentSession"]:
         """Invoke a subagent by name.
 
         Args:
             name: Subagent name
             task: Task description
-            max_turns: Max turns before returning
+            max_turns: Max turns before returning (subagent should stop earlier when done)
             resume_id: Optional agent_id to resume previous session
+            context: Optional context/findings from main agent to share
 
         Returns:
             (result, agent_id, session) - Result text, agent_id, and full session for trajectory
@@ -222,6 +226,15 @@ class SubagentManager:
         # Resolve tools - IMPORTANT: Remove invoke_subagent to prevent nesting
         tools = self._get_tools_for_subagent(config.tools, exclude_subagent=True)
 
+        # Build task with context prefix if provided
+        full_task = task
+        if context:
+            full_task = f"""## Context from Main Agent
+{context}
+
+## Your Task
+{task}"""
+
         # Load or create session
         agent_id = resume_id or str(uuid.uuid4())[:8]
         session = None
@@ -230,7 +243,7 @@ class SubagentManager:
 
         # Run subagent loop
         result, final_session = self._run_subagent(
-            config, task, model, tools, max_turns, session, agent_id
+            config, full_task, model, tools, max_turns, session, agent_id
         )
 
         # Save session for potential resumption
