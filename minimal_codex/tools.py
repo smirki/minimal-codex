@@ -319,6 +319,36 @@ PARALLEL_TOOLS = {"update_plan", "read_file", "list_dir", "grep_files", "web_sea
 # Tools that need exclusive access (side effects)
 SEQUENTIAL_TOOLS = {"shell_command", "apply_patch", "exec_command", "write_stdin", "invoke_subagent"}
 
+# Tool parallelization configuration (matches Codex's supports_parallel_tool_calls flag)
+# Read-only tools: can acquire read lock and run concurrently
+# Mutating tools: must acquire write lock for exclusive access
+TOOL_PARALLEL_CONFIG = {
+    # Read-only tools (supports_parallel=True)
+    "read_file": True,
+    "list_dir": True,
+    "grep_files": True,
+    "web_search": True,
+    "update_plan": True,  # Plan updates are idempotent
+    "save_plan": True,
+
+    # Mutating tools (supports_parallel=False) - need exclusive access
+    "shell_command": False,
+    "shell": False,
+    "apply_patch": False,
+    "exec_command": False,
+    "write_stdin": False,
+    "invoke_subagent": False,  # Subagents may mutate state
+}
+
+
+def tool_supports_parallel(tool_name: str) -> bool:
+    """Check if tool supports parallel execution (like Codex's tool_supports_parallel).
+
+    Returns True if the tool can safely run concurrently with other read-only tools.
+    Returns False if the tool needs exclusive write access.
+    """
+    return TOOL_PARALLEL_CONFIG.get(tool_name, False)
+
 # Truncation settings
 MAX_TOOL_OUTPUT_BYTES = 10000
 

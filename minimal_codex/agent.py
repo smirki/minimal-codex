@@ -47,7 +47,60 @@ from .tools import (
     update_plan,
     truncate_output,
     HAS_WEB_SEARCH,
+    tool_supports_parallel,
 )
+
+import threading
+from contextlib import contextmanager
+
+
+class RwLock:
+    """Read-Write Lock for tool execution (matches Codex's tokio::sync::RwLock behavior).
+
+    - Multiple readers can hold the lock simultaneously
+    - Writers get exclusive access
+    - Writers wait for all readers to finish
+
+    This enables safe parallel execution of read-only tools (read_file, list_dir, grep_files)
+    while ensuring mutating tools (shell, apply_patch) get exclusive access.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._readers = 0
+        self._writer_waiting = False
+        self._read_ready = threading.Condition(self._lock)
+        self._write_ready = threading.Condition(self._lock)
+
+    @contextmanager
+    def read_lock(self):
+        """Acquire read lock (shared access for parallel tools)."""
+        with self._lock:
+            while self._writer_waiting:
+                self._read_ready.wait()
+            self._readers += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._readers -= 1
+                if self._readers == 0:
+                    self._write_ready.notify()
+
+    @contextmanager
+    def write_lock(self):
+        """Acquire write lock (exclusive access for mutating tools)."""
+        with self._lock:
+            self._writer_waiting = True
+            while self._readers > 0:
+                self._write_ready.wait()
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._writer_waiting = False
+                self._read_ready.notify_all()
+
 
 # LiteLLM configuration - important for compatibility with various APIs
 litellm.drop_params = True
@@ -60,6 +113,16 @@ litellm.drop_params = True
 APPROX_BYTES_PER_TOKEN = 4
 COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
 COMPACT_USER_MESSAGE_MAX_BYTES = COMPACT_USER_MESSAGE_MAX_TOKENS * APPROX_BYTES_PER_TOKEN  # 80,000
+
+# Retry constants (exact Codex values from util.rs)
+INITIAL_DELAY_MS = 200  # 200ms starting delay
+BACKOFF_FACTOR = 2.0
+DEFAULT_STREAM_MAX_RETRIES = 5
+DEFAULT_REQUEST_MAX_RETRIES = 4
+STREAM_IDLE_TIMEOUT_MS = 300_000  # 5 minutes
+
+# Retryable HTTP status codes
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # Exact prompt from compact/prompt.md
 COMPACT_PROMPT = """You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
@@ -86,6 +149,36 @@ def approx_token_count(text: str) -> int:
     return (byte_len + APPROX_BYTES_PER_TOKEN - 1) // APPROX_BYTES_PER_TOKEN
 
 
+def backoff(attempt: int) -> float:
+    """Calculate backoff delay with jitter (exact Codex algorithm from util.rs).
+
+    Formula: base_delay * 2^(attempt-1) * jitter
+    Where jitter is 0.9-1.1 (±10%)
+    """
+    exp = BACKOFF_FACTOR ** max(0, attempt - 1)
+    base_ms = INITIAL_DELAY_MS * exp
+    jitter = random.uniform(0.9, 1.1)
+    return (base_ms * jitter) / 1000.0  # Convert to seconds
+
+
+def _is_summary_message(msg: dict) -> bool:
+    """Check if message is a previous compaction summary (like Codex's is_summary_message).
+
+    Filters out previous summaries to prevent summary-of-summary bloat during
+    repeated compactions.
+    """
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        # Handle multi-part content
+        for part in content:
+            if part.get("type") == "text":
+                text = part.get("text", "")
+                if text.strip().startswith(SUMMARY_PREFIX.strip()[:50]):
+                    return True
+        return False
+    return str(content).strip().startswith(SUMMARY_PREFIX.strip()[:50])
+
+
 def collect_user_messages(
     messages: list[dict],
     max_bytes: int = COMPACT_USER_MESSAGE_MAX_BYTES
@@ -93,17 +186,23 @@ def collect_user_messages(
     """Extract user messages from history up to max_bytes.
 
     This matches Codex's collect_user_messages() exactly:
-    - Iterates through messages in order
-    - Concatenates user message content
+    - Filters out previous summary messages (prevents summary-of-summary bloat)
+    - Processes in REVERSE order (newest first) to prioritize recent context
     - Stops when byte limit is reached
+    - Reverses back to chronological order for the summary
     """
-    result = []
+    collected = []
     total_bytes = 0
 
-    for msg in messages:
-        if msg.get("role") != "user":
-            continue
+    # Filter out previous summary messages (Codex's is_summary_message check)
+    user_messages = [
+        msg for msg in messages
+        if msg.get("role") == "user"
+        and not _is_summary_message(msg)
+    ]
 
+    # Process in REVERSE order (newest first) like real Codex
+    for msg in reversed(user_messages):
         content = msg.get("content", "")
         if isinstance(content, list):
             # Handle multi-part messages (text + images)
@@ -115,18 +214,19 @@ def collect_user_messages(
         content_bytes = len(content.encode('utf-8'))
 
         if total_bytes + content_bytes > max_bytes:
-            # Truncate to fit
+            # Truncate this message to fit remaining budget
             remaining = max_bytes - total_bytes
-            if remaining > 0:
-                # Simple byte truncation (Codex does UTF-8 safe truncation)
+            if remaining > 100:  # Only include if meaningful
                 truncated = content.encode('utf-8')[:remaining].decode('utf-8', errors='ignore')
-                result.append(truncated)
+                collected.append(truncated)
             break
 
-        result.append(content)
+        collected.append(content)
         total_bytes += content_bytes
 
-    return "\n\n".join(result)
+    # Reverse back to chronological order for summary
+    collected.reverse()
+    return "\n\n".join(collected)
 
 
 def build_compacted_history(
@@ -225,6 +325,12 @@ class CodexAgent:
         if self.features.enabled(Feature.PLAN_MODE):
             self.plan_manager = PlanManager(self.cwd)
 
+        # Completion detection (matches real Codex's needs_follow_up flag)
+        self.needs_follow_up = False
+
+        # Smart read/write lock for tool execution (matches Codex's tokio::sync::RwLock)
+        self._tool_lock = RwLock()
+
     def _get_base_tools(self) -> list:
         """Get base tools without subagent invocation.
 
@@ -257,13 +363,13 @@ class CodexAgent:
 
         return tools
 
-    def run(self, task: str, max_turns: int = 100, use_plan_mode: bool = False,
+    def run(self, task: str, max_turns: Optional[int] = None, use_plan_mode: bool = False,
             trajectory_path: Optional[str] = None) -> dict:
         """Run the agent until task completion.
 
         Args:
             task: The task to perform
-            max_turns: Maximum number of turns before stopping
+            max_turns: Maximum turns (None = unlimited, uses compaction like real Codex)
             use_plan_mode: If True and PLAN_MODE enabled, use autonomous planning
             trajectory_path: Path where main trajectory will be saved (for subagent trajectories)
 
@@ -281,12 +387,17 @@ class CodexAgent:
         # Standard execution
         return self._run_standard(task, max_turns)
 
-    def _run_standard(self, task: str, max_turns: int = 100) -> dict:
+    def _run_standard(self, task: str, max_turns: Optional[int] = None) -> dict:
         """Run standard agent loop without plan mode.
+
+        Matches real Codex behavior:
+        - Unlimited turns by default (uses compaction instead of stopping)
+        - needs_follow_up flag for completion detection
+        - Optional max_turns safety limit
 
         Args:
             task: The task to perform
-            max_turns: Maximum number of turns before stopping
+            max_turns: Maximum turns (None = unlimited like real Codex)
 
         Returns:
             Dict with output, trajectory, token counts, etc.
@@ -298,10 +409,22 @@ class CodexAgent:
         for msg in self.messages:
             self._record_message(msg["role"], msg["content"])
 
-        for turn in range(max_turns):
-            # Check for compaction before API call (from Codex's compact.rs)
-            if self.compact_conversation():
-                print(f"[Compacted context at turn {turn}]")
+        turn = 0
+        while True:
+            # Optional safety limit (can be set via parameter)
+            if max_turns is not None and turn >= max_turns:
+                print(f"Warning: Reached max_turns limit ({max_turns})")
+                return {
+                    "error": "Max turns exceeded",
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+
+            # Check for compaction before API call (like real Codex - compact instead of stopping)
+            if self.should_compact():
+                print(f"[Token limit approaching at turn {turn}, compacting context...]")
+                self.compact_conversation()
 
             try:
                 response = self._call_api_with_retry()
@@ -333,8 +456,23 @@ class CodexAgent:
             # Record to trajectory
             self._record_assistant(assistant_message, usage)
 
-            # Check if done (no tool calls)
-            if not assistant_message.tool_calls:
+            # Completion detection using needs_follow_up (matches real Codex)
+            if assistant_message.tool_calls:
+                self.needs_follow_up = True  # Tool calls requested = need follow-up
+
+                # Execute tool calls
+                tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+
+                # Add results to conversation and trajectory
+                for result in tool_results:
+                    self.messages.append(result)
+                    self._record_tool_result(result["tool_call_id"], result["content"])
+            else:
+                # No tool calls in response = model is done
+                self.needs_follow_up = False
+
+            # Exit condition (matches real Codex)
+            if not self.needs_follow_up:
                 return {
                     "output": assistant_message.content,
                     "trajectory": self.trajectory,
@@ -348,22 +486,9 @@ class CodexAgent:
                     }
                 }
 
-            # Execute tool calls
-            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+            turn += 1
 
-            # Add results to conversation and trajectory
-            for result in tool_results:
-                self.messages.append(result)
-                self._record_tool_result(result["tool_call_id"], result["content"])
-
-        return {
-            "error": "Max turns exceeded",
-            "trajectory": self.trajectory,
-            "input_tokens": self.total_input_tokens,
-            "output_tokens": self.total_output_tokens,
-        }
-
-    def _run_with_plan_mode(self, task: str, max_turns: int) -> dict:
+    def _run_with_plan_mode(self, task: str, max_turns: Optional[int]) -> dict:
         """Plan mode - just adds read-only planning prompt to system message.
 
         Following Claude Code's pattern: plan mode is just a prompt, not phases.
@@ -371,7 +496,7 @@ class CodexAgent:
 
         Args:
             task: The task to perform
-            max_turns: Maximum turns
+            max_turns: Maximum turns (None = unlimited)
 
         Returns:
             Dict with output, trajectory, token counts, etc.
@@ -394,19 +519,35 @@ class CodexAgent:
         # Run standard loop - main agent makes all decisions
         return self._run_standard_loop(max_turns)
 
-    def _run_standard_loop(self, max_turns: int) -> dict:
+    def _run_standard_loop(self, max_turns: Optional[int]) -> dict:
         """Run the standard agent loop (shared by both modes).
 
+        Matches real Codex behavior:
+        - Unlimited turns by default (uses compaction instead of stopping)
+        - needs_follow_up flag for completion detection
+
         Args:
-            max_turns: Maximum number of turns
+            max_turns: Maximum turns (None = unlimited like real Codex)
 
         Returns:
             Dict with output, trajectory, token counts, etc.
         """
-        for turn in range(max_turns):
-            # Check for compaction before API call
-            if self.compact_conversation():
-                print(f"[Compacted context at turn {turn}]")
+        turn = 0
+        while True:
+            # Optional safety limit
+            if max_turns is not None and turn >= max_turns:
+                print(f"Warning: Reached max_turns limit ({max_turns})")
+                return {
+                    "error": "Max turns exceeded",
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+
+            # Check for compaction before API call (like real Codex)
+            if self.should_compact():
+                print(f"[Token limit approaching at turn {turn}, compacting context...]")
+                self.compact_conversation()
 
             try:
                 response = self._call_api_with_retry()
@@ -438,8 +579,23 @@ class CodexAgent:
             # Record to trajectory
             self._record_assistant(assistant_message, usage)
 
-            # Check if done (no tool calls)
-            if not assistant_message.tool_calls:
+            # Completion detection using needs_follow_up (matches real Codex)
+            if assistant_message.tool_calls:
+                self.needs_follow_up = True  # Tool calls requested = need follow-up
+
+                # Execute tool calls
+                tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+
+                # Add results to conversation and trajectory
+                for result in tool_results:
+                    self.messages.append(result)
+                    self._record_tool_result(result["tool_call_id"], result["content"])
+            else:
+                # No tool calls in response = model is done
+                self.needs_follow_up = False
+
+            # Exit condition (matches real Codex)
+            if not self.needs_follow_up:
                 return {
                     "output": assistant_message.content,
                     "trajectory": self.trajectory,
@@ -453,20 +609,7 @@ class CodexAgent:
                     }
                 }
 
-            # Execute tool calls
-            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
-
-            # Add results to conversation and trajectory
-            for result in tool_results:
-                self.messages.append(result)
-                self._record_tool_result(result["tool_call_id"], result["content"])
-
-        return {
-            "error": "Max turns exceeded",
-            "trajectory": self.trajectory,
-            "input_tokens": self.total_input_tokens,
-            "output_tokens": self.total_output_tokens,
-        }
+            turn += 1
 
     def _save_subagent_trajectories(self, sessions: list) -> list[str]:
         """Save subagent sessions to trajectory files in ATIF format.
@@ -660,20 +803,26 @@ class CodexAgent:
                 "content": f"[Plan continues from file]\n{plan_context}",
             })
 
-    def _call_api_with_retry(self, max_retries: int = 3) -> Any:
-        """Call API with exponential backoff retry.
+    def _call_api_with_retry(self, max_retries: int = DEFAULT_STREAM_MAX_RETRIES) -> Any:
+        """Call API with exponential backoff retry (matches real Codex).
+
+        Uses Codex's exact retry algorithm from util.rs:
+        - Base delay: 200ms
+        - Backoff factor: 2x
+        - Jitter: ±10%
+        - Default max retries: 5
 
         Supports streaming when Feature.STREAMING is enabled.
 
         Args:
-            max_retries: Maximum number of retry attempts
+            max_retries: Maximum number of retry attempts (default 5 like Codex)
 
         Returns:
             API response object
         """
-        base_delay = 1.0
         tools = self._get_tools()
         use_streaming = self.features.enabled(Feature.STREAMING)
+        last_exception = None
 
         for attempt in range(max_retries + 1):
             try:
@@ -699,19 +848,24 @@ class CodexAgent:
                     )
                     return response
             except Exception as e:
-                if attempt == max_retries:
-                    raise
+                last_exception = e
 
-                # Check if retryable
+                # Check if retryable (like Codex's error classification)
                 if not self._is_retryable_error(e):
-                    raise
+                    raise  # Non-retryable errors fail immediately
 
-                # Exponential backoff with jitter
-                delay = base_delay * (2 ** attempt)
-                jitter = random.uniform(0.9, 1.1)
-                time.sleep(delay * jitter)
+                if attempt < max_retries:
+                    # Use Codex's exact backoff algorithm
+                    delay = backoff(attempt + 1)
 
-        raise Exception("Max retries exceeded")
+                    # Log retry attempt (like Codex's warn! macro)
+                    print(f"API error - retrying ({attempt + 1}/{max_retries} in {delay:.2f}s): {e}")
+
+                    time.sleep(delay)
+                else:
+                    raise last_exception
+
+        raise last_exception or Exception("Max retries exceeded")
 
     def _handle_streaming_response(self, response_stream) -> Any:
         """Handle streaming response, outputting tokens as they arrive.
@@ -803,9 +957,31 @@ class CodexAgent:
         )
 
     def _is_retryable_error(self, error: Exception) -> bool:
-        """Check if error should trigger retry."""
+        """Check if error is retryable (matches Codex's error classification).
+
+        Retryable: 429, 500, 502, 503, 504, timeout, connection errors
+        Non-retryable: Authentication, invalid request, quota exceeded
+        """
         error_str = str(error).lower()
-        return any(x in error_str for x in ['429', '500', '502', '503', 'timeout', 'connection'])
+
+        # Check for retryable HTTP status codes
+        for code in RETRYABLE_STATUS_CODES:
+            if str(code) in error_str:
+                return True
+
+        # Check for retryable error types
+        retryable_keywords = [
+            "timeout", "timed out",
+            "connection", "connect",
+            "temporary", "transient",
+            "service unavailable",
+            "bad gateway",
+            "gateway timeout",
+            "rate limit",  # 429
+            "stream",  # SSE stream errors
+        ]
+
+        return any(keyword in error_str for keyword in retryable_keywords)
 
     def _serialize_assistant_message(self, message) -> dict:
         """Serialize assistant message following Codex's exact Chat Completions format.
@@ -873,45 +1049,71 @@ class CodexAgent:
         return total
 
     def compact_conversation(self) -> bool:
-        """Perform context compaction using LLM summarization.
+        """Perform context compaction using LLM summarization (matches real Codex).
+
+        Includes overflow retry logic: if context still exceeds limits during
+        compaction, trim oldest history items and retry (like Codex's compact.rs).
 
         Returns True if compaction was performed.
         """
         if not self.should_compact():
             return False
 
-        # Build prompt for summarization
-        history_text = self._format_history_for_summary()
+        # Collect user messages for summarization (newest-first with summary filtering)
+        user_content = collect_user_messages(self.messages)
+        if not user_content.strip():
+            return False
 
         summary_messages = [
             {"role": "system", "content": COMPACT_PROMPT},
-            {"role": "user", "content": history_text}
+            {"role": "user", "content": user_content}
         ]
 
-        try:
-            # Call model for summarization
-            response = completion(
-                model=self.model,
-                messages=summary_messages,
-                max_tokens=4000,  # Allow substantial summary
-            )
-            summary = response.choices[0].message.content
+        max_retries = 3
+        history_to_compact = list(self.messages)  # Copy for trimming
 
-            # Track tokens used for summary
-            if hasattr(response, 'usage') and response.usage:
-                self.total_input_tokens += getattr(response.usage, 'prompt_tokens', 0)
-                self.total_output_tokens += getattr(response.usage, 'completion_tokens', 0)
+        for attempt in range(max_retries):
+            try:
+                # Call model for summarization
+                response = completion(
+                    model=self.model,
+                    messages=summary_messages,
+                    max_tokens=4000,  # Allow substantial summary
+                    temperature=0.3,  # Lower temperature for consistent summarization
+                )
+                summary = response.choices[0].message.content
 
-            # Build new compacted history
-            self.messages = build_compacted_history(self.messages, summary)
-            self.last_compaction_tokens = self._estimate_context_tokens()
+                # Track tokens used for summary
+                if hasattr(response, 'usage') and response.usage:
+                    self.total_input_tokens += getattr(response.usage, 'prompt_tokens', 0)
+                    self.total_output_tokens += getattr(response.usage, 'completion_tokens', 0)
 
-            return True
+                if summary:
+                    full_summary = f"{SUMMARY_PREFIX}\n\n{summary}"
+                    # Build new compacted history
+                    self.messages = build_compacted_history(self.messages, full_summary)
+                    self.last_compaction_tokens = self._estimate_context_tokens()
+                    print(f"Context compacted. New token estimate: {self.last_compaction_tokens}")
+                    return True
 
-        except Exception as e:
-            # Log error but don't fail - just continue with full history
-            print(f"Warning: Compaction failed: {e}")
-            return False
+                return False
+
+            except Exception as e:
+                error_str = str(e).lower()
+                # Check for context window exceeded (like Codex's ContextWindowExceeded handling)
+                if "context" in error_str or "token" in error_str or "length" in error_str:
+                    if len(history_to_compact) > 1:
+                        # Remove oldest item and retry (like Codex)
+                        print(f"Context exceeded during compaction, trimming oldest item (attempt {attempt + 1})")
+                        history_to_compact.pop(0)
+                        user_content = collect_user_messages(history_to_compact)
+                        summary_messages[1]["content"] = user_content
+                        continue
+                # Log error but don't fail - just continue with full history
+                print(f"Warning: Compaction failed: {e}")
+                return False
+
+        return False
 
     def _format_history_for_summary(self) -> str:
         """Format conversation history for summarization."""
@@ -935,7 +1137,11 @@ class CodexAgent:
         return "\n\n---\n\n".join(parts)
 
     def _execute_tool_calls(self, tool_calls: list) -> list[dict]:
-        """Execute tool calls, parallelizing where supported.
+        """Execute tool calls with smart read/write locking (matches real Codex).
+
+        Uses RwLock like Codex's tokio::sync::RwLock:
+        - Read-only tools (read_file, list_dir, grep_files): acquire read lock, can run concurrently
+        - Mutating tools (shell, apply_patch): acquire write lock, exclusive access
 
         Args:
             tool_calls: List of tool call objects from the API
@@ -945,27 +1151,33 @@ class CodexAgent:
         """
         results = []
 
-        # Separate parallel vs sequential tools
+        # Separate tools by parallelization capability (matches Codex's tool_supports_parallel)
         parallel_calls = []
         sequential_calls = []
 
         for tc in tool_calls:
-            if tc.function.name in PARALLEL_TOOLS:
+            tool_name = tc.function.name
+            if tool_supports_parallel(tool_name):
                 parallel_calls.append(tc)
             else:
                 sequential_calls.append(tc)
 
-        # Execute sequential tools first (shell, apply_patch need exclusive access)
-        for tc in sequential_calls:
-            result = self._execute_single_tool(tc)
-            results.append(result)
-
-        # Execute parallel tools concurrently
+        # Execute parallel tools concurrently with read locks
         if parallel_calls:
-            with ThreadPoolExecutor(max_workers=len(parallel_calls)) as executor:
-                futures = [executor.submit(self._execute_single_tool, tc) for tc in parallel_calls]
+            with ThreadPoolExecutor(max_workers=min(len(parallel_calls), 4)) as executor:
+                def execute_with_read_lock(call):
+                    with self._tool_lock.read_lock():
+                        return self._execute_single_tool(call)
+
+                futures = [executor.submit(execute_with_read_lock, tc) for tc in parallel_calls]
                 for f in futures:
                     results.append(f.result())
+
+        # Execute sequential tools one at a time with write locks (exclusive access)
+        for tc in sequential_calls:
+            with self._tool_lock.write_lock():
+                result = self._execute_single_tool(tc)
+                results.append(result)
 
         return results
 
@@ -1336,7 +1548,8 @@ def main():
     parser.add_argument("--cwd", default=".", help="Working directory")
     parser.add_argument("--output", help="Output file for results JSON")
     parser.add_argument("--trajectory", help="Output file for ATIF trajectory")
-    parser.add_argument("--max-turns", type=int, default=100, help="Maximum turns")
+    parser.add_argument("--max-turns", type=int, default=None,
+                        help="Maximum turns (default: unlimited, uses compaction like real Codex)")
 
     # Feature flags (all enabled by default, use --no-* to disable)
     parser.add_argument("--no-stream", action="store_true",
