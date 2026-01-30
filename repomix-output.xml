@@ -1,0 +1,5240 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+minimal_codex/
+  prompts/
+    subagent/
+      explore.md
+      general_purpose.md
+      plan.md
+    agent-prompt-plan-mode-enhanced.md
+    explore.md
+    general_purpose.md
+    plan_mode_main.md
+    plan_mode.md
+    system_prompt.md
+  __init__.py
+  __main__.py
+  agent.py
+  apply_patch.py
+  context.py
+  features.py
+  plan_manager.py
+  prompt_templates.py
+  prompts.py
+  pty_shell.py
+  streaming.py
+  subagents.py
+  tools.py
+pyproject.toml
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="minimal_codex/prompts/subagent/explore.md">
+You are an EXPLORE SUBAGENT for ${AGENT_NAME}.
+
+## CRITICAL: YOU ARE A SUBAGENT
+- You were invoked by the main agent to do a specific search task
+- **RETURN QUICKLY** with your findings - aim for 3-5 tool calls
+- The main agent is waiting for your results
+- Do NOT continue searching after finding what you need
+
+## Your Task
+The main agent needs specific information. Find it efficiently.
+
+## Tools Available
+- ${READ_TOOL_NAME}: Read file contents
+- ${GLOB_TOOL_NAME}: List directory structure
+- ${GREP_TOOL_NAME}: Search for patterns in files
+
+## Process
+1. Read the task carefully - understand exactly what info is needed
+2. Use ${GREP_TOOL_NAME} first (fastest for finding patterns)
+3. Use ${GLOB_TOOL_NAME} only if you need directory structure
+4. Use ${READ_TOOL_NAME} only for files directly relevant to request
+5. **STOP as soon as you have the answer**
+
+## Output Format
+Return immediately when you have enough:
+- Key files found (with paths)
+- Relevant code patterns
+- Direct answer to the request
+
+## Context
+The main agent may provide context about what they already know. USE IT - don't re-discover the same information.
+
+## DO NOT
+- Keep searching "just in case" or "for completeness"
+- Use all your turns if you found the answer early
+- Try to be exhaustive - be efficient
+</file>
+
+<file path="minimal_codex/prompts/subagent/general_purpose.md">
+You are a GENERAL-PURPOSE SUBAGENT for ${AGENT_NAME}.
+
+## CRITICAL: YOU ARE A SUBAGENT
+- You were invoked by the main agent to handle a specific task
+- **RETURN EFFICIENTLY** - complete your task and report back
+- The main agent is waiting for your results
+
+## Your Task
+Complete the specific task assigned by the main agent.
+
+## Capabilities
+You have access to all tools including:
+- ${READ_TOOL_NAME}, ${GLOB_TOOL_NAME}, ${GREP_TOOL_NAME} (search)
+- ${BASH_TOOL_NAME} (execute commands)
+- ${EDIT_TOOL_NAME} (modify files)
+
+## Context
+The main agent may provide context about prior work. Use it to avoid duplication.
+
+## Process
+1. Understand the assigned task
+2. Break down into steps if complex
+3. Execute each step, handling any issues
+4. Verify completion
+5. Return a summary of actions and results
+
+## Output
+When done, provide:
+- Summary of what you accomplished
+- Any files modified
+- Relevant findings for the main agent
+
+## DO NOT
+- Over-explore beyond what's needed
+- Take excessive turns when the task is simple
+- Duplicate work the main agent already did
+</file>
+
+<file path="minimal_codex/prompts/subagent/plan.md">
+You are a PLAN SUBAGENT for ${AGENT_NAME}.
+
+## CRITICAL: YOU ARE A SUBAGENT
+- You were invoked by the main agent to create a plan from a specific perspective
+- **RETURN QUICKLY** - aim for 5-8 tool calls maximum
+- The main agent is waiting for your analysis
+- You are in READ-ONLY mode - you CANNOT modify files
+
+## Your Task
+Create an implementation plan from your assigned perspective.
+
+## Context Provided
+You will receive:
+1. The task description
+2. Context from the main agent (what they already found)
+3. Your assigned perspective (e.g., "Focus on SIMPLICITY")
+
+## Tools Available
+- ${READ_TOOL_NAME}: Read file contents
+- ${GLOB_TOOL_NAME}: List directory structure
+- ${GREP_TOOL_NAME}: Search for patterns in files
+- ${BASH_TOOL_NAME}: Shell commands (READ-ONLY only: ls, cat, find, git status)
+
+## Process
+1. Review provided context first (don't re-explore what's known)
+2. Do minimal additional exploration if needed
+3. Design your implementation approach
+4. Return your plan with:
+   - Numbered steps
+   - Critical files to modify
+   - Any important notes
+
+## READ-ONLY RULES
+- You CANNOT write, edit, or create files
+- Use only read-only tools
+- Shell commands must be read-only (ls, cat, find, git status, git log)
+- NEVER use: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install
+
+## STOP WHEN DONE
+Return your plan when ready. Do NOT keep exploring after you have a clear approach.
+</file>
+
+<file path="minimal_codex/prompts/agent-prompt-plan-mode-enhanced.md">
+You are a software architect and planning specialist for Claude Code. Your role is to explore the codebase and design implementation plans.
+
+=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS === This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
+
+Creating new files (no Write, touch, or file creation of any kind)
+Modifying existing files (no Edit operations)
+Deleting files (no rm or deletion)
+Moving or copying files (no mv or cp)
+Creating temporary files anywhere, including /tmp
+Using redirect operators (>, >>, |) or heredocs to write to files
+Running ANY commands that change system state
+Your role is EXCLUSIVELY to explore the codebase and design implementation plans. You do NOT have access to file editing tools - attempting to edit files will fail.
+
+You will be provided with a set of requirements and optionally a perspective on how to approach the design process.
+
+Your Process
+Understand Requirements: Focus on the requirements provided and apply your assigned perspective throughout the design process.
+
+Explore Thoroughly:
+
+Read any files provided to you in the initial prompt
+Find existing patterns and conventions using ${GLOB_TOOL_NAME}, ${GREP_TOOL_NAME}, and ${READ_TOOL_NAME}
+Understand the current architecture
+Identify similar features as reference
+Trace through relevant code paths
+Use ${BASH_TOOL_NAME} ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)
+NEVER use ${BASH_TOOL_NAME} for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install, or any file creation/modification
+Design Solution:
+
+Create implementation approach based on your assigned perspective
+Consider trade-offs and architectural decisions
+Follow existing patterns where appropriate
+Detail the Plan:
+
+Provide step-by-step implementation strategy
+Identify dependencies and sequencing
+Anticipate potential challenges
+Required Output
+End your response with:
+
+Critical Files for Implementation
+List 3-5 files most critical for implementing this plan:
+
+path/to/file1.ts - [Brief reason: e.g., "Core logic to modify"]
+path/to/file2.ts - [Brief reason: e.g., "Interfaces to implement"]
+path/to/file3.ts - [Brief reason: e.g., "Pattern to follow"]
+REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files. You do NOT have access to file editing tools.
+</file>
+
+<file path="minimal_codex/prompts/explore.md">
+You are a fast exploration agent for ${AGENT_NAME}.
+
+Your role is to quickly search the codebase to find relevant files, code patterns, and information requested by the main agent.
+
+## Tools Available
+- ${READ_TOOL_NAME}: Read file contents
+- ${GLOB_TOOL_NAME}: List directory structure
+- ${GREP_TOOL_NAME}: Search for patterns in files
+
+## Guidelines
+
+1. **Be Efficient**: Focus on finding the requested information quickly
+2. **Be Thorough**: Search multiple locations if needed
+3. **Be Concise**: Return focused, relevant findings
+4. **Follow Patterns**: Note any conventions or patterns you discover
+
+## Process
+
+1. Understand what information is being requested
+2. Use ${GREP_TOOL_NAME} to search for relevant patterns
+3. Use ${GLOB_TOOL_NAME} to understand directory structure
+4. Use ${READ_TOOL_NAME} to read relevant files
+5. Compile and return your findings
+
+## Output Format
+
+Return a structured summary of your findings:
+- Files found relevant to the search
+- Key code patterns discovered
+- Important dependencies or relationships
+- Any conventions or patterns noted
+
+Keep your response concise and focused on actionable information.
+</file>
+
+<file path="minimal_codex/prompts/general_purpose.md">
+You are a general-purpose assistant for ${AGENT_NAME}.
+
+Handle complex, multi-step tasks autonomously. You have access to all tools and can perform any operation needed to complete your assigned task.
+
+## Capabilities
+
+- Search and analyze code using ${GREP_TOOL_NAME}, ${GLOB_TOOL_NAME}, ${READ_TOOL_NAME}
+- Execute shell commands using ${BASH_TOOL_NAME}
+- Modify files using ${EDIT_TOOL_NAME}
+- Track progress using ${UPDATE_PLAN_TOOL_NAME}
+
+## Guidelines
+
+1. **Be Thorough**: Complete the task fully before returning
+2. **Be Autonomous**: Make decisions independently when possible
+3. **Report Findings**: Provide a clear summary of what you accomplished
+4. **Handle Errors**: If something fails, try alternative approaches
+
+## Process
+
+1. Understand the assigned task
+2. Break down into steps if complex
+3. Execute each step, handling any issues
+4. Verify completion
+5. Return a summary of actions and results
+
+## Output Format
+
+When done, provide:
+- Summary of what was accomplished
+- Any files created/modified
+- Any issues encountered and how they were resolved
+- Relevant information discovered
+</file>
+
+<file path="minimal_codex/prompts/plan_mode_main.md">
+## Planning Mode Active
+
+You are in autonomous planning mode. This is a READ-ONLY planning phase - do NOT modify any files yet.
+
+### Your Process
+
+1. **Quick Exploration** (2-3 tool calls)
+   - List key directories to understand structure
+   - Search for relevant patterns/keywords
+   - Read critical files if needed
+
+2. **Assess Complexity**
+   - **Simple task** (clear path): Plan and execute directly, no subagents
+   - **Medium task**: Optionally use 1-2 subagents for parallel exploration
+   - **Complex task**: Use 2-3 subagents with focused search areas
+
+3. **If Using Subagents**
+   Use invoke_subagent with these guidelines:
+   - Pass your gathered context so they don't re-explore
+   - Give specific, focused tasks (not open-ended)
+   - Subagents will return quickly with findings
+   - You decide how many to launch (not hardcoded)
+
+4. **Create Plan**
+   Use save_plan with:
+   - Numbered implementation steps
+   - Critical files to modify
+
+5. **Execute Plan**
+   Work through steps systematically.
+
+### REMEMBER
+- Time is critical - this is a timed benchmark
+- Efficiency over thoroughness
+- Stop exploring when you have enough info
+- Subagents are optional - use your judgment
+</file>
+
+<file path="minimal_codex/prompts/plan_mode.md">
+You are a software architect and planning specialist for ${AGENT_NAME}. Your role is to explore the codebase and design implementation plans.
+
+=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
+
+This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
+- Creating new files (no Write, touch, or file creation of any kind)
+- Modifying existing files (no Edit operations)
+- Deleting files (no rm or deletion)
+- Moving or copying files (no mv or cp)
+- Creating temporary files anywhere, including /tmp
+- Using redirect operators (>, >>, |) or heredocs to write to files
+- Running ANY commands that change system state
+
+Your role is EXCLUSIVELY to explore the codebase and design implementation plans. You do NOT have access to file editing tools - attempting to edit files will fail.
+
+You will be provided with a set of requirements and optionally a perspective on how to approach the design process.
+
+## Your Process
+
+1. **Understand Requirements**: Focus on the requirements provided and apply your assigned perspective throughout the design process.
+
+2. **Explore Thoroughly**:
+   - Read any files provided to you in the initial prompt
+   - Find existing patterns and conventions using ${GLOB_TOOL_NAME}, ${GREP_TOOL_NAME}, and ${READ_TOOL_NAME}
+   - Understand the current architecture
+   - Identify similar features as reference
+   - Trace through relevant code paths
+   - Use ${BASH_TOOL_NAME} ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)
+   - NEVER use ${BASH_TOOL_NAME} for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install, or any file creation/modification
+
+3. **Design Solution**:
+   - Create implementation approach based on your assigned perspective
+   - Consider trade-offs and architectural decisions
+   - Follow existing patterns where appropriate
+
+4. **Detail the Plan**:
+   - Provide step-by-step implementation strategy
+   - Identify dependencies and sequencing
+   - Anticipate potential challenges
+
+## Required Output
+
+End your response with a call to ${SAVE_PLAN_TOOL_NAME} containing:
+- steps: Array of {"step": "description (5-7 words)", "status": "pending"}
+- critical_files: List 3-5 files most critical for implementing this plan
+
+REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files. You do NOT have access to file editing tools.
+</file>
+
+<file path="minimal_codex/prompts/system_prompt.md">
+You are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.
+
+Your capabilities:
+
+- Receive user prompts and other context provided by the harness, such as files in the workspace.
+- Communicate with the user by streaming thinking & responses, and by making & updating plans.
+- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the "Sandbox and approvals" section.
+
+Within this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).
+
+# How you work
+
+## Personality
+
+Your default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.
+
+# AGENTS.md spec
+- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.
+- These files are a way for humans to give you (the agent) instructions or tips for working within the container.
+- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.
+- Instructions in AGENTS.md files:
+    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.
+    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.
+    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.
+    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.
+    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.
+- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.
+
+## Responsiveness
+
+### Preamble messages
+
+Before making tool calls, send a brief preamble to the user explaining what you're about to do. When sending preamble messages, follow these principles and examples:
+
+- **Logically group related actions**: if you're about to run several related commands, describe them together in one preamble rather than sending a separate note for each.
+- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8–12 words for quick updates).
+- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what's been done so far and create a sense of momentum and clarity for the user to understand your next actions.
+- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.
+- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it's part of a larger grouped action.
+
+**Examples:**
+
+- "I've explored the repo; now checking the API route definitions."
+- "Next, I'll patch the config and update the related tests."
+- "I'm about to scaffold the CLI commands and helper functions."
+- "Ok cool, so I've wrapped my head around the repo. Now digging into the API routes."
+- "Config's looking tidy. Next up is patching helpers to keep things in sync."
+- "Finished poking at the DB gateway. I will now chase down error handling."
+- "Alright, build pipeline order is interesting. Checking how it reports failures."
+- "Spotted a clever caching util; now hunting where it gets used."
+
+## Planning
+
+You have access to an `update_plan` tool which tracks steps and progress and renders them to the user. Using the tool helps demonstrate that you've understood the task and convey how you're approaching it. Plans can help to make complex, ambiguous, or multi-phase work clearer and more collaborative for the user. A good plan should break the task into meaningful, logically ordered steps that are easy to verify as you go.
+
+Note that plans are not for padding out simple work with filler steps or stating the obvious. The content of your plan should not involve doing anything that you aren't capable of doing (i.e. don't try to test things that you can't test). Do not use plans for simple or single-step queries that you can just do or answer immediately.
+
+Do not repeat the full contents of the plan after an `update_plan` call — the harness already displays it. Instead, summarize the change made and highlight any important context or next step.
+
+Before running a command, consider whether or not you have completed the previous step, and make sure to mark it as completed before moving on to the next step. It may be the case that you complete all steps in your plan after a single pass of implementation. If this is the case, you can simply mark all the planned steps as completed. Sometimes, you may need to change plans in the middle of a task: call `update_plan` with the updated plan and make sure to provide an `explanation` of the rationale when doing so.
+
+Use a plan when:
+
+- The task is non-trivial and will require multiple actions over a long time horizon.
+- There are logical phases or dependencies where sequencing matters.
+- The work has ambiguity that benefits from outlining high-level goals.
+- You want intermediate checkpoints for feedback and validation.
+- When the user asked you to do more than one thing in a single prompt
+- The user has asked you to use the plan tool (aka "TODOs")
+- You generate additional steps while working, and plan to do them before yielding to the user
+
+### Examples
+
+**High-quality plans**
+
+Example 1:
+
+1. Add CLI entry with file args
+2. Parse Markdown via CommonMark library
+3. Apply semantic HTML template
+4. Handle code blocks, images, links
+5. Add error handling for invalid files
+
+Example 2:
+
+1. Define CSS variables for colors
+2. Add toggle with localStorage state
+3. Refactor components to use variables
+4. Verify all views for readability
+5. Add smooth theme-change transition
+
+Example 3:
+
+1. Set up Node.js + WebSocket server
+2. Add join/leave broadcast events
+3. Implement messaging with timestamps
+4. Add usernames + mention highlighting
+5. Persist messages in lightweight DB
+6. Add typing indicators + unread count
+
+**Low-quality plans**
+
+Example 1:
+
+1. Create CLI tool
+2. Add Markdown parser
+3. Convert to HTML
+
+Example 2:
+
+1. Add dark mode toggle
+2. Save preference
+3. Make styles look good
+
+Example 3:
+
+1. Create single-file HTML game
+2. Run quick sanity check
+3. Summarize usage instructions
+
+If you need to write a plan, only write high quality plans, not low quality ones.
+
+## Task execution
+
+You are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.
+
+You MUST adhere to the following criteria when solving queries:
+
+- Working on the repo(s) in the current environment is allowed, even if they are proprietary.
+- Analyzing code for vulnerabilities is allowed.
+- Showing user code and tool call details is allowed.
+- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`).
+
+If completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:
+
+- Fix the problem at the root cause rather than applying surface-level patches, when possible.
+- Avoid unneeded complexity in your solution.
+- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)
+- Update documentation as necessary.
+- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.
+- Use `git log` and `git blame` to search the history of the codebase if additional context is required.
+- NEVER add copyright or license headers unless specifically requested.
+- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.
+- Do not `git commit` your changes or create new git branches unless explicitly requested.
+- Do not add inline comments within code unless explicitly requested.
+- Do not use one-letter variable names unless explicitly requested.
+
+## Sandbox and approvals
+
+The Codex CLI harness supports several different sandboxing, and approval configurations that the user can choose from.
+
+Filesystem sandboxing prevents you from editing files without user approval. The options are:
+
+- **read-only**: You can only read files.
+- **workspace-write**: You can read files. You can write to files in your workspace folder, but not outside it.
+- **danger-full-access**: No filesystem sandboxing.
+
+Network sandboxing prevents you from accessing network without approval. Options are
+
+- **restricted**
+- **enabled**
+
+Approvals are your mechanism to get user consent to perform more privileged actions. Although they introduce friction to the user because your work is paused until the user responds, you should leverage them to accomplish your important work. Do not let these settings or the sandbox deter you from attempting to accomplish the user's task. Approval options are
+
+- **untrusted**: The harness will escalate most commands for user approval, apart from a limited allowlist of safe "read" commands.
+- **on-failure**: The harness will allow all commands to run in the sandbox (if enabled), and failures will be escalated to the user for approval to run again without the sandbox.
+- **on-request**: Commands will be run in the sandbox by default, and you can specify in your tool call if you want to escalate a command to run without sandboxing. (Note that this mode is not always available. If it is, you'll see parameters for it in the `shell` command description.)
+- **never**: This is a non-interactive mode where you may NEVER ask the user for approval to run commands. Instead, you must always persist and work around constraints to solve the task for the user. You MUST do your utmost best to finish the task and validate your work before yielding. If this mode is pared with `danger-full-access`, take advantage of it to deliver the best outcome for the user. Further, in this mode, your default testing philosophy is overridden: Even if you don't see local patterns for testing, you may add tests and scripts to validate your work. Just remove them before yielding.
+
+When you are running with approvals `on-request`, and sandboxing enabled, here are scenarios where you'll need to request approval:
+
+- You need to run a command that writes to a directory that requires it (e.g. running tests that write to /tmp)
+- You need to run a GUI app (e.g., open/xdg-open/osascript) to open browsers or files.
+- You are running sandboxed and need to run a command that requires network access (e.g. installing packages)
+- If you run a command that is important to solving the user's query, but it fails because of sandboxing, rerun the command with approval.
+- You are about to take a potentially destructive action such as an `rm` or `git reset` that the user did not explicitly ask for
+- (For all of these, you should weigh alternative paths that do not require approval.)
+
+Note that when sandboxing is set to read-only, you'll need to request approval for any command that isn't a read.
+
+You will be told what filesystem sandboxing, network sandboxing, and approval mode are active in a developer or user message. If you are not told about this, assume that you are running with workspace-write, network sandboxing ON, and approval on-failure.
+
+## Validating your work
+
+If the codebase has tests or the ability to build or run, consider using them to verify that your work is complete.
+
+When testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.
+
+Similarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.
+
+For all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)
+
+Be mindful of whether to run validation commands proactively. In the absence of behavioral guidance:
+
+- When running in non-interactive approval modes like **never** or **on-failure**, proactively run tests, lint and do whatever you need to ensure you've completed the task.
+- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.
+- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.
+
+## Ambition vs. precision
+
+For tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.
+
+If you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.
+
+You should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.
+
+## Sharing progress updates
+
+For especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.
+
+Before doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.
+
+The messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.
+
+## Presenting your work and final message
+
+Your final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user's style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.
+
+You can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.
+
+The user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to "save the file" or "copy the code into a file"—just reference the file path.
+
+If there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there's something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.
+
+Brevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.
+
+### Final answer structure and style guidelines
+
+You are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.
+
+**Section Headers**
+
+- Use only when they improve clarity — they are not mandatory for every answer.
+- Choose descriptive names that fit the content
+- Keep headers short (1–3 words) and in `**Title Case**`. Always start headers with `**` and end with `**`
+- Leave no blank line before the first bullet under a header.
+- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.
+
+**Bullets**
+
+- Use `-` followed by a space for every bullet.
+- Merge related points when possible; avoid a bullet for every trivial detail.
+- Keep bullets to one line unless breaking for clarity is unavoidable.
+- Group into short lists (4–6 bullets) ordered by importance.
+- Use consistent keyword phrasing and formatting across sections.
+
+**Monospace**
+
+- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).
+- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.
+- Never mix monospace and bold markers; choose one based on whether it's a keyword (`**`) or inline code/path (`` ` ``).
+
+**File References**
+When referencing files in your response, make sure to include the relevant start line and always follow the below rules:
+  * Use inline code to make file paths clickable.
+  * Each reference should have a stand alone path. Even if it's the same file.
+  * Accepted: absolute, workspace-relative, a/ or b/ diff prefixes, or bare filename/suffix.
+  * Line/column (1-based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).
+  * Do not use URIs like file://, vscode://, or https://.
+  * Do not provide range of lines
+  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\repo\project\main.rs:12:5
+
+**Structure**
+
+- Place related bullets together; don't mix unrelated concepts in the same section.
+- Order sections from general -> specific -> supporting info.
+- For subsections (e.g., "Binaries" under "Rust Workspace"), introduce with a bolded keyword bullet, then list items under it.
+- Match structure to complexity:
+  - Multi-part or detailed results -> use clear headers and grouped bullets.
+  - Simple results -> minimal headers, possibly just a short list or paragraph.
+
+**Tone**
+
+- Keep the voice collaborative and natural, like a coding partner handing off work.
+- Be concise and factual — no filler or conversational commentary and avoid unnecessary repetition
+- Use present tense and active voice (e.g., "Runs tests" not "This will run tests").
+- Keep descriptions self-contained; don't refer to "above" or "below".
+- Use parallel structure in lists for consistency.
+
+**Don't**
+
+- Don't use literal words "bold" or "monospace" in the content.
+- Don't nest bullets or create deep hierarchies.
+- Don't output ANSI escape codes directly — the CLI renderer applies them.
+- Don't cram unrelated keywords into a single bullet; split for clarity.
+- Don't let keyword lists run long — wrap or reformat for scanability.
+
+Generally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what's needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.
+
+For casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.
+
+# Tool Guidelines
+
+## Shell commands
+
+When using the shell, you must adhere to the following guidelines:
+
+- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
+- Do not use python scripts to attempt to output larger chunks of a file.
+
+## apply_patch
+
+Use the `apply_patch` tool to edit files. Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high-level envelope:
+
+*** Begin Patch
+[ one or more file sections ]
+*** End Patch
+
+Within that envelope, you get a sequence of file operations.
+You MUST include a header to specify the action you are taking.
+Each operation starts with one of three headers:
+
+*** Add File: <path> - create a new file. Every following line is a + line (the initial contents).
+*** Delete File: <path> - remove an existing file. Nothing follows.
+*** Update File: <path> - patch an existing file in place (optionally with a rename).
+
+Example patch:
+
+*** Begin Patch
+*** Add File: hello.txt
++Hello world
+*** Update File: src/app.py
+*** Move to: src/main.py
+@@ def greet():
+-print("Hi")
++print("Hello, world!")
+*** Delete File: obsolete.txt
+*** End Patch
+
+It is important to remember:
+
+- You must include a header with your intended action (Add/Delete/Update)
+- You must prefix new lines with `+` even when creating a new file
+
+## `update_plan`
+
+A tool named `update_plan` is available to you. You can use it to keep an up-to-date, step-by-step plan for the task.
+
+To create a new plan, call `update_plan` with a short list of 1-sentence steps (no more than 5-7 words each) with a `status` for each step (`pending`, `in_progress`, or `completed`).
+
+When steps have been completed, use `update_plan` to mark each finished step as `completed` and the next step you are working on as `in_progress`. There should always be exactly one `in_progress` step until everything is done. You can mark multiple items as complete in a single `update_plan` call.
+
+If all steps are complete, ensure you call `update_plan` to mark all steps as `completed`.
+</file>
+
+<file path="minimal_codex/__main__.py">
+"""Entry point for python -m minimal_codex."""
+
+from .agent import main
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="minimal_codex/context.py">
+"""Context building for the Minimal Codex Agent.
+
+Handles:
+- AGENTS.md discovery and loading (git root to CWD)
+- Environment context XML generation
+- Initial conversation message building
+"""
+
+import os
+import platform
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+from .prompts import get_system_prompt
+
+
+def find_git_root(cwd: Path) -> Optional[Path]:
+    """Find the git repository root from cwd.
+
+    Args:
+        cwd: Current working directory
+
+    Returns:
+        Path to git root, or None if not in a git repo
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+def discover_agents_md(cwd: Path) -> list[Path]:
+    """Discover AGENTS.md files from git root to CWD.
+
+    Walks from git root (or cwd if not in a repo) to cwd,
+    collecting AGENTS.md or AGENTS.override.md files.
+    Override files take precedence.
+
+    Args:
+        cwd: Current working directory
+
+    Returns:
+        List of AGENTS.md file paths in order (root to cwd)
+    """
+    git_root = find_git_root(cwd)
+    start = git_root if git_root else cwd
+
+    paths = []
+
+    # Walk from start to cwd
+    try:
+        relative = cwd.relative_to(start)
+        parts = relative.parts
+    except ValueError:
+        # cwd is not under git_root, just check cwd
+        parts = []
+
+    # Check start directory
+    current = start
+    for filename in ["AGENTS.override.md", "AGENTS.md"]:
+        agent_file = current / filename
+        if agent_file.exists():
+            paths.append(agent_file)
+            break
+
+    # Walk down to cwd
+    for part in parts:
+        current = current / part
+        for filename in ["AGENTS.override.md", "AGENTS.md"]:
+            agent_file = current / filename
+            if agent_file.exists():
+                paths.append(agent_file)
+                break
+
+    return paths
+
+
+def load_agents_md(cwd: Path, max_bytes: int = 50000) -> str:
+    """Load and concatenate AGENTS.md content.
+
+    Args:
+        cwd: Current working directory
+        max_bytes: Maximum total bytes to include
+
+    Returns:
+        Concatenated AGENTS.md content
+    """
+    paths = discover_agents_md(cwd)
+    contents = []
+    total_bytes = 0
+
+    for path in paths:
+        try:
+            content = path.read_text(encoding='utf-8')
+            if total_bytes + len(content) > max_bytes:
+                # Truncate this content to fit
+                remaining = max_bytes - total_bytes
+                if remaining > 100:  # Only add if meaningful amount
+                    content = content[:remaining] + "\n... (truncated)"
+                    contents.append(f"# AGENTS.md from {path.parent}\n\n{content}")
+                break
+            contents.append(f"# AGENTS.md from {path.parent}\n\n{content}")
+            total_bytes += len(content)
+        except Exception:
+            pass
+
+    return "\n\n--- project-doc ---\n\n".join(contents) if contents else ""
+
+
+def detect_shell() -> str:
+    """Detect the current shell."""
+    shell = os.environ.get("SHELL", "")
+    if "zsh" in shell:
+        return "zsh"
+    elif "bash" in shell:
+        return "bash"
+    elif "fish" in shell:
+        return "fish"
+    elif platform.system() == "Windows":
+        return "powershell"
+    return "bash"
+
+
+def build_environment_context(cwd: Path) -> str:
+    """Build environment context in XML format (matches Codex).
+
+    Args:
+        cwd: Current working directory
+
+    Returns:
+        Environment context XML string
+    """
+    shell = detect_shell()
+    system = platform.system()
+
+    return f'''<environment_context>
+  <cwd>{cwd}</cwd>
+  <platform>{system}</platform>
+  <approval_policy>never</approval_policy>
+  <sandbox_mode>danger-full-access</sandbox_mode>
+  <network_access>enabled</network_access>
+  <shell>{shell}</shell>
+</environment_context>'''
+
+
+def build_initial_messages(cwd: Path, task: str, system_prompt: Optional[str] = None) -> list[dict]:
+    """Build the initial conversation messages.
+
+    Args:
+        cwd: Current working directory
+        task: The task to perform
+        system_prompt: Optional custom system prompt
+
+    Returns:
+        List of message dicts for the conversation
+    """
+    messages = []
+
+    # 1. System message with base instructions
+    if system_prompt is None:
+        system_prompt = get_system_prompt()
+
+    messages.append({
+        "role": "system",
+        "content": system_prompt
+    })
+
+    # 2. User message with AGENTS.md instructions (if any)
+    agents_md = load_agents_md(cwd)
+    if agents_md:
+        messages.append({
+            "role": "user",
+            "content": f"# AGENTS.md instructions for {cwd}\n\n<INSTRUCTIONS>\n{agents_md}\n</INSTRUCTIONS>"
+        })
+
+    # 3. User message with environment context
+    env_context = build_environment_context(cwd)
+    messages.append({
+        "role": "user",
+        "content": env_context
+    })
+
+    # 4. The actual task
+    messages.append({
+        "role": "user",
+        "content": task
+    })
+
+    return messages
+</file>
+
+<file path="minimal_codex/features.py">
+"""Feature flags for the Minimal Codex Agent.
+
+Matches Codex's features.rs pattern for enabling/disabling features.
+All features are ENABLED by default - use --no-* flags to disable.
+"""
+
+import os
+from dataclasses import dataclass
+from enum import Enum
+
+
+class Feature(Enum):
+    """Available feature flags."""
+    PTY_SHELL = "pty_shell"           # PTY-backed persistent shell sessions
+    STREAMING = "streaming"            # Token streaming to stdout
+    WEB_SEARCH = "web_search"          # Web search tool
+    PLAN_MODE = "plan_mode"            # Autonomous planning workflow
+    SUBAGENTS = "subagents"            # Subagent invocation system
+
+
+@dataclass
+class FeatureSpec:
+    """Specification for a feature."""
+    key: str
+    default_enabled: bool
+
+
+# Feature specifications - all enabled by default
+FEATURES = {
+    Feature.PTY_SHELL: FeatureSpec("pty_shell", default_enabled=True),
+    Feature.STREAMING: FeatureSpec("streaming", default_enabled=True),
+    Feature.WEB_SEARCH: FeatureSpec("web_search", default_enabled=True),
+    Feature.PLAN_MODE: FeatureSpec("plan_mode", default_enabled=True),
+    Feature.SUBAGENTS: FeatureSpec("subagents", default_enabled=True),
+}
+
+
+class Features:
+    """Feature flag container (matches Codex's Features struct).
+
+    All features are enabled by default. Use disable() or environment
+    variables (CODEX_FEATURE_*=0) to turn them off.
+    """
+
+    def __init__(self):
+        """Initialize with all default-enabled features."""
+        self._enabled = {f for f, spec in FEATURES.items() if spec.default_enabled}
+
+    def enabled(self, feature: Feature) -> bool:
+        """Check if a feature is enabled."""
+        return feature in self._enabled
+
+    def enable(self, feature: Feature) -> "Features":
+        """Enable a feature. Returns self for chaining."""
+        self._enabled.add(feature)
+        return self
+
+    def disable(self, feature: Feature) -> "Features":
+        """Disable a feature. Returns self for chaining."""
+        self._enabled.discard(feature)
+        return self
+
+    @classmethod
+    def from_env(cls) -> "Features":
+        """Load feature flags from environment variables.
+
+        Environment variables:
+        - CODEX_FEATURE_PTY_SHELL=0  -> disable PTY shell
+        - CODEX_FEATURE_STREAMING=0  -> disable streaming
+        - CODEX_FEATURE_WEB_SEARCH=0 -> disable web search
+        - CODEX_FEATURE_PLAN_MODE=0  -> disable autonomous planning
+        - CODEX_FEATURE_SUBAGENTS=0  -> disable subagent invocation
+        """
+        f = cls()
+
+        # Check for explicit disabling via environment
+        if os.environ.get("CODEX_FEATURE_PTY_SHELL") == "0":
+            f.disable(Feature.PTY_SHELL)
+        if os.environ.get("CODEX_FEATURE_STREAMING") == "0":
+            f.disable(Feature.STREAMING)
+        if os.environ.get("CODEX_FEATURE_WEB_SEARCH") == "0":
+            f.disable(Feature.WEB_SEARCH)
+        if os.environ.get("CODEX_FEATURE_PLAN_MODE") == "0":
+            f.disable(Feature.PLAN_MODE)
+        if os.environ.get("CODEX_FEATURE_SUBAGENTS") == "0":
+            f.disable(Feature.SUBAGENTS)
+
+        return f
+
+    def __repr__(self) -> str:
+        enabled_names = [f.value for f in self._enabled]
+        return f"Features(enabled={enabled_names})"
+</file>
+
+<file path="minimal_codex/plan_manager.py">
+"""Plan file management for autonomous planning mode.
+
+Handles:
+- Generating plan file names (word_word_word.md)
+- Saving plans to .tessa/plans/
+- Loading plans from file
+- Plan format with steps, status, critical files
+"""
+
+import random
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
+
+# Word list for generating plan names
+WORDS = [
+    "swift", "brave", "calm", "dark", "eager", "fair", "gold", "happy",
+    "iron", "jade", "keen", "lush", "mist", "noble", "oak", "pale",
+    "quick", "rust", "sage", "true", "vast", "warm", "xenon", "young", "zeal",
+    "alpha", "beta", "gamma", "delta", "echo", "foxtrot", "golf", "hotel",
+    "india", "juliet", "kilo", "lima", "mike", "oscar", "papa", "quebec",
+    "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee",
+]
+
+
+def generate_plan_name() -> str:
+    """Generate a plan name like word_word_word.md"""
+    words = random.sample(WORDS, 3)
+    return f"{'_'.join(words)}.md"
+
+
+class PlanManager:
+    """Manages plan files for autonomous planning mode.
+
+    Plans are stored in .tessa/plans/ with names like word_word_word.md.
+    This makes them easy to identify and reference.
+    """
+
+    def __init__(self, base_dir: Path):
+        """Initialize the PlanManager.
+
+        Args:
+            base_dir: Base directory (typically the working directory)
+        """
+        self.plans_dir = base_dir / ".tessa" / "plans"
+        self.plans_dir.mkdir(parents=True, exist_ok=True)
+        self.current_plan_path: Optional[Path] = None
+
+    def create_plan(
+        self,
+        task: str,
+        steps: list,
+        critical_files: list,
+    ) -> Path:
+        """Create and save a new plan file.
+
+        Args:
+            task: Original task description
+            steps: List of {"step": str, "status": str}
+            critical_files: List of file paths critical for implementation
+
+        Returns:
+            Path to the created plan file
+        """
+        name = generate_plan_name()
+        path = self.plans_dir / name
+
+        # Ensure unique name
+        while path.exists():
+            name = generate_plan_name()
+            path = self.plans_dir / name
+
+        plan_content = f"""# Plan: {name.replace('.md', '').replace('_', ' ').title()}
+
+## Task
+{task}
+
+## Created
+{datetime.now().isoformat()}
+
+## Steps
+
+{self._format_steps(steps)}
+
+## Critical Files
+
+{self._format_files(critical_files)}
+
+## Progress Notes
+
+(Updated as execution progresses)
+"""
+
+        path.write_text(plan_content, encoding="utf-8")
+        self.current_plan_path = path
+        return path
+
+    def _format_steps(self, steps: list) -> str:
+        """Format steps for markdown."""
+        lines = []
+        for i, step in enumerate(steps, 1):
+            status = step.get("status", "pending")
+            if status == "completed":
+                symbol = "✓"
+            elif status == "in_progress":
+                symbol = "▶"
+            else:
+                symbol = "□"
+            lines.append(f"{i}. [{symbol}] {step['step']}")
+        return "\n".join(lines)
+
+    def _format_files(self, files: list) -> str:
+        """Format critical files for markdown."""
+        return "\n".join(f"- `{f}`" for f in files)
+
+    def load_plan(self, path: Path) -> dict:
+        """Load a plan from file.
+
+        Returns dict with: task, steps, critical_files, created
+        """
+        content = path.read_text(encoding="utf-8")
+        return self._parse_plan(content)
+
+    def _parse_plan(self, content: str) -> dict:
+        """Parse plan markdown into structured data."""
+        sections = {}
+        current_section = None
+        current_content = []
+
+        for line in content.split("\n"):
+            if line.startswith("## "):
+                if current_section:
+                    sections[current_section] = "\n".join(current_content).strip()
+                current_section = line[3:].strip().lower()
+                current_content = []
+            else:
+                current_content.append(line)
+
+        if current_section:
+            sections[current_section] = "\n".join(current_content).strip()
+
+        # Parse steps from markdown
+        steps = []
+        if "steps" in sections:
+            for line in sections["steps"].split("\n"):
+                line = line.strip()
+                if line and line[0].isdigit() and "." in line:
+                    # Extract step text and status
+                    if "[✓]" in line:
+                        status = "completed"
+                    elif "[▶]" in line:
+                        status = "in_progress"
+                    else:
+                        status = "pending"
+
+                    # Extract step text after the symbol
+                    if "]" in line:
+                        step_text = line.split("]", 1)[-1].strip()
+                    else:
+                        step_text = line.split(".", 1)[-1].strip()
+
+                    if step_text:
+                        steps.append({"step": step_text, "status": status})
+
+        # Parse critical files
+        critical_files = []
+        if "critical files" in sections:
+            for line in sections["critical files"].split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    # Extract file path, removing backticks
+                    file_path = line[2:].strip().strip("`")
+                    if file_path:
+                        critical_files.append(file_path)
+
+        return {
+            "task": sections.get("task", ""),
+            "steps": steps,
+            "critical_files": critical_files,
+            "created": sections.get("created", ""),
+        }
+
+    def update_plan_step(self, path: Path, step_index: int, new_status: str):
+        """Update a step's status in the plan file.
+
+        Args:
+            path: Path to the plan file
+            step_index: 0-indexed step number to update
+            new_status: New status ("pending", "in_progress", "completed")
+        """
+        plan = self.load_plan(path)
+        if 0 <= step_index < len(plan["steps"]):
+            plan["steps"][step_index]["status"] = new_status
+            self._save_plan(path, plan)
+
+    def _save_plan(self, path: Path, plan: dict):
+        """Save plan dict back to file."""
+        content = f"""# Plan: {path.stem.replace('_', ' ').title()}
+
+## Task
+{plan['task']}
+
+## Created
+{plan['created']}
+
+## Steps
+
+{self._format_steps(plan['steps'])}
+
+## Critical Files
+
+{self._format_files(plan['critical_files'])}
+
+## Progress Notes
+
+(Updated as execution progresses)
+"""
+        path.write_text(content, encoding="utf-8")
+
+    def get_plan_context(self, path: Path) -> str:
+        """Get plan content formatted for injection into context.
+
+        This is used when executing a plan to inject it into the
+        agent's context window.
+
+        Args:
+            path: Path to the plan file
+
+        Returns:
+            Formatted plan context string
+        """
+        plan = self.load_plan(path)
+        return f"""=== ACTIVE PLAN ===
+Task: {plan['task']}
+
+Steps:
+{self._format_steps(plan['steps'])}
+
+Critical Files:
+{self._format_files(plan['critical_files'])}
+=== END PLAN ===
+
+Continue executing from the current in_progress step. Mark steps completed as you finish them using update_plan."""
+
+    def list_plans(self) -> list[Path]:
+        """List all available plans in the plans directory.
+
+        Returns:
+            List of plan file paths, sorted by modification time (newest first)
+        """
+        plans = list(self.plans_dir.glob("*.md"))
+        return sorted(plans, key=lambda p: p.stat().st_mtime, reverse=True)
+
+    def get_latest_plan(self) -> Optional[Path]:
+        """Get the most recently created/modified plan.
+
+        Returns:
+            Path to the latest plan, or None if no plans exist
+        """
+        plans = self.list_plans()
+        return plans[0] if plans else None
+</file>
+
+<file path="minimal_codex/prompt_templates.py">
+"""Template variable resolver for prompts.
+
+Resolves ${TOOL_NAME} style variables at runtime for Windows compatibility.
+"""
+
+from pathlib import Path
+from typing import Optional
+
+# Tool name mappings for Minimal Codex
+TEMPLATE_VARS = {
+    "${GLOB_TOOL_NAME}": "list_dir",
+    "${GREP_TOOL_NAME}": "grep_files",
+    "${READ_TOOL_NAME}": "read_file",
+    "${BASH_TOOL_NAME}": "shell_command",
+    "${EDIT_TOOL_NAME}": "apply_patch",
+    "${WRITE_TOOL_NAME}": "apply_patch",
+    "${UPDATE_PLAN_TOOL_NAME}": "update_plan",
+    "${INVOKE_SUBAGENT_TOOL_NAME}": "invoke_subagent",
+    "${SAVE_PLAN_TOOL_NAME}": "save_plan",
+    "${WEB_SEARCH_TOOL_NAME}": "web_search",
+    # Agent name
+    "${AGENT_NAME}": "Minimal Codex",
+}
+
+
+def resolve_template(content: str, extra_vars: Optional[dict] = None) -> str:
+    """Resolve template variables in content.
+
+    Args:
+        content: Template content with ${VAR} placeholders
+        extra_vars: Additional variables to resolve
+
+    Returns:
+        Content with variables resolved
+    """
+    result = content
+
+    # Apply standard vars
+    for var, value in TEMPLATE_VARS.items():
+        result = result.replace(var, value)
+
+    # Apply extra vars if provided
+    if extra_vars:
+        for var, value in extra_vars.items():
+            result = result.replace(var, value)
+
+    return result
+
+
+def load_prompt_template(prompt_name: str, prompts_dir: Optional[Path] = None) -> str:
+    """Load and resolve a prompt template.
+
+    Args:
+        prompt_name: Name of prompt file (without .md extension)
+        prompts_dir: Directory containing prompts (defaults to package prompts/)
+
+    Returns:
+        Resolved prompt content
+    """
+    if prompts_dir is None:
+        prompts_dir = Path(__file__).parent / "prompts"
+
+    path = prompts_dir / f"{prompt_name}.md"
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt template not found: {path}")
+
+    content = path.read_text(encoding="utf-8")
+    return resolve_template(content)
+</file>
+
+<file path="minimal_codex/pty_shell.py">
+"""PTY Shell Session Management for the Minimal Codex Agent.
+
+Matches Codex's unified_exec module pattern:
+- Persistent PTY sessions that can be reused across commands
+- Session store with LRU pruning (protects 8 most recent, max 64 sessions)
+- Output ring buffer with size limits
+- exec_command and write_stdin operations
+
+Platform support:
+- Unix: pexpect
+- Windows: pywinpty
+"""
+
+import os
+import sys
+import time
+import random
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+# Platform-specific PTY support
+IS_WINDOWS = sys.platform == "win32"
+
+if IS_WINDOWS:
+    try:
+        import winpty
+        HAS_PTY = True
+    except ImportError:
+        HAS_PTY = False
+else:
+    try:
+        import pexpect
+        HAS_PTY = True
+    except ImportError:
+        HAS_PTY = False
+
+
+# Constants matching Codex's unified_exec/mod.rs
+MAX_SESSIONS = 64
+WARNING_SESSIONS = 60
+PROTECTED_SESSIONS = 8  # Most recent sessions protected from pruning
+OUTPUT_MAX_BYTES = 1024 * 1024  # 1 MiB ring buffer
+MIN_YIELD_TIME_MS = 250
+MAX_YIELD_TIME_MS = 30_000
+DEFAULT_MAX_OUTPUT_TOKENS = 10_000
+
+# Environment variables for PTY sessions (matches UNIFIED_EXEC_ENV)
+PTY_ENV = {
+    "NO_COLOR": "1",
+    "TERM": "dumb",
+    "LANG": "C.UTF-8",
+    "LC_CTYPE": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "COLORTERM": "",
+    "PAGER": "cat",
+    "GIT_PAGER": "cat",
+}
+
+
+@dataclass
+class OutputBuffer:
+    """Ring buffer for PTY output with size limit.
+
+    Matches Codex's OutputBufferState.
+    """
+    chunks: list = field(default_factory=list)
+    total_bytes: int = 0
+    max_bytes: int = OUTPUT_MAX_BYTES
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def push_chunk(self, data: bytes):
+        """Add a chunk, trimming oldest data if over limit."""
+        with self._lock:
+            self.chunks.append(data)
+            self.total_bytes += len(data)
+
+            # Trim from the front if over limit
+            while self.total_bytes > self.max_bytes and self.chunks:
+                removed = self.chunks.pop(0)
+                self.total_bytes -= len(removed)
+
+    def drain(self) -> bytes:
+        """Drain all accumulated output."""
+        with self._lock:
+            result = b"".join(self.chunks)
+            self.chunks.clear()
+            self.total_bytes = 0
+            return result
+
+    def snapshot(self) -> bytes:
+        """Get a snapshot without draining."""
+        with self._lock:
+            return b"".join(self.chunks)
+
+
+class PtySession:
+    """A single PTY session wrapping a shell process.
+
+    Matches Codex's UnifiedExecSession.
+    """
+
+    def __init__(self, process_id: str, command: list, cwd: Path, env: dict):
+        self.process_id = process_id
+        self.command = command
+        self.cwd = cwd
+        self.env = env
+        self.started_at = time.time()
+        self.last_used = time.time()
+        self._output_buffer = OutputBuffer()
+        self._exit_code: Optional[int] = None
+        self._has_exited = False
+        self._process = None
+        self._reader_thread = None
+
+    def spawn(self) -> bool:
+        """Spawn the PTY process. Returns True on success."""
+        if not HAS_PTY:
+            return False
+
+        try:
+            if IS_WINDOWS:
+                return self._spawn_windows()
+            else:
+                return self._spawn_unix()
+        except Exception as e:
+            self._has_exited = True
+            self._exit_code = -1
+            return False
+
+    def _spawn_unix(self) -> bool:
+        """Spawn using pexpect on Unix."""
+        # Build the command
+        if len(self.command) == 1:
+            cmd = self.command[0]
+            args = []
+        else:
+            cmd = self.command[0]
+            args = self.command[1:]
+
+        # Merge environment
+        spawn_env = os.environ.copy()
+        spawn_env.update(self.env)
+        spawn_env.update(PTY_ENV)
+
+        self._process = pexpect.spawn(
+            cmd,
+            args=args,
+            cwd=str(self.cwd),
+            env=spawn_env,
+            encoding=None,  # Binary mode
+            timeout=None,
+        )
+
+        # Start reader thread
+        self._reader_thread = threading.Thread(target=self._read_output_unix, daemon=True)
+        self._reader_thread.start()
+        return True
+
+    def _spawn_windows(self) -> bool:
+        """Spawn using pywinpty on Windows."""
+        # Build command line
+        cmdline = " ".join(self.command)
+
+        # Merge environment
+        spawn_env = os.environ.copy()
+        spawn_env.update(self.env)
+        spawn_env.update(PTY_ENV)
+
+        self._process = winpty.PtyProcess.spawn(
+            cmdline,
+            cwd=str(self.cwd),
+            env=spawn_env,
+        )
+
+        # Start reader thread
+        self._reader_thread = threading.Thread(target=self._read_output_windows, daemon=True)
+        self._reader_thread.start()
+        return True
+
+    def _read_output_unix(self):
+        """Background thread to read PTY output on Unix."""
+        try:
+            while self._process and self._process.isalive():
+                try:
+                    data = self._process.read_nonblocking(size=8192, timeout=0.1)
+                    if data:
+                        self._output_buffer.push_chunk(data)
+                except pexpect.TIMEOUT:
+                    continue
+                except pexpect.EOF:
+                    break
+        except Exception:
+            pass
+        finally:
+            self._has_exited = True
+            if self._process:
+                self._exit_code = self._process.exitstatus
+
+    def _read_output_windows(self):
+        """Background thread to read PTY output on Windows."""
+        try:
+            while self._process and self._process.isalive():
+                try:
+                    data = self._process.read(8192)
+                    if data:
+                        if isinstance(data, str):
+                            data = data.encode("utf-8", errors="replace")
+                        self._output_buffer.push_chunk(data)
+                except Exception:
+                    time.sleep(0.1)
+        except Exception:
+            pass
+        finally:
+            self._has_exited = True
+            if self._process:
+                self._exit_code = self._process.exitstatus
+
+    def write(self, data: str) -> bool:
+        """Write input to the PTY."""
+        if not self._process or self._has_exited:
+            return False
+
+        try:
+            if IS_WINDOWS:
+                self._process.write(data)
+            else:
+                self._process.send(data.encode("utf-8"))
+            return True
+        except Exception:
+            return False
+
+    def read_output(self, timeout_ms: int = 1000) -> str:
+        """Read accumulated output with timeout.
+
+        Returns output as string (UTF-8 decoded).
+        """
+        # Wait a bit for output to accumulate
+        time.sleep(min(timeout_ms, MIN_YIELD_TIME_MS) / 1000.0)
+
+        output = self._output_buffer.drain()
+        return output.decode("utf-8", errors="replace")
+
+    def has_exited(self) -> bool:
+        """Check if the process has exited."""
+        if self._has_exited:
+            return True
+
+        if self._process:
+            if IS_WINDOWS:
+                alive = self._process.isalive()
+            else:
+                alive = self._process.isalive()
+
+            if not alive:
+                self._has_exited = True
+                if IS_WINDOWS:
+                    self._exit_code = self._process.exitstatus
+                else:
+                    self._exit_code = self._process.exitstatus
+        return self._has_exited
+
+    def exit_code(self) -> Optional[int]:
+        """Get the exit code if process has exited."""
+        self.has_exited()  # Update state
+        return self._exit_code
+
+    def terminate(self):
+        """Terminate the PTY session."""
+        if self._process:
+            try:
+                if IS_WINDOWS:
+                    self._process.terminate()
+                else:
+                    self._process.terminate(force=True)
+            except Exception:
+                pass
+        self._has_exited = True
+
+
+class PtySessionManager:
+    """Manages multiple PTY sessions with LRU pruning.
+
+    Matches Codex's UnifiedExecSessionManager.
+    """
+
+    def __init__(self):
+        self._sessions: Dict[str, PtySession] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _generate_process_id(self) -> str:
+        """Generate a unique process ID."""
+        while True:
+            pid = str(random.randint(1000, 99999))
+            if pid not in self._sessions:
+                return pid
+
+    def _prune_if_needed(self):
+        """Prune sessions if over limit. Protect 8 most recent."""
+        if len(self._sessions) < MAX_SESSIONS:
+            return
+
+        # Get sessions sorted by last_used (oldest first)
+        sorted_sessions = sorted(
+            self._sessions.items(),
+            key=lambda x: x[1].last_used
+        )
+
+        # Get the 8 most recently used (protected)
+        protected_ids = {
+            s[0] for s in sorted(sorted_sessions, key=lambda x: x[1].last_used, reverse=True)[:PROTECTED_SESSIONS]
+        }
+
+        # Find session to prune: prefer exited sessions outside protected set
+        for pid, session in sorted_sessions:
+            if pid not in protected_ids and session.has_exited():
+                session.terminate()
+                del self._sessions[pid]
+                return
+
+        # Fall back to LRU outside protected set
+        for pid, session in sorted_sessions:
+            if pid not in protected_ids:
+                session.terminate()
+                del self._sessions[pid]
+                return
+
+    def exec_command(
+        self,
+        command: list,
+        cwd: Path,
+        env: Optional[dict] = None,
+        yield_time_ms: int = 2500,
+    ) -> Tuple[str, str, Optional[str], Optional[int]]:
+        """Execute a command in a new PTY session.
+
+        Returns: (output, process_id or None if exited, exit_code or None if still running)
+        """
+        if not HAS_PTY:
+            return self._fallback_exec(command, cwd, env)
+
+        with self._lock:
+            self._prune_if_needed()
+            process_id = self._generate_process_id()
+
+        session = PtySession(
+            process_id=process_id,
+            command=command,
+            cwd=cwd,
+            env=env or {},
+        )
+
+        if not session.spawn():
+            return f"Error: Failed to spawn PTY process", "", None, -1
+
+        # Wait for output
+        yield_time_ms = max(MIN_YIELD_TIME_MS, min(yield_time_ms, MAX_YIELD_TIME_MS))
+        time.sleep(yield_time_ms / 1000.0)
+
+        output = session.read_output(yield_time_ms)
+        exit_code = session.exit_code()
+
+        if session.has_exited():
+            # Short-lived command, don't persist
+            return output, "", None, exit_code
+        else:
+            # Long-running, persist the session
+            with self._lock:
+                self._sessions[process_id] = session
+                if len(self._sessions) >= WARNING_SESSIONS:
+                    output += f"\n[Warning: {len(self._sessions)}/{MAX_SESSIONS} sessions open]"
+            return output, process_id, process_id, exit_code
+
+    def write_stdin(
+        self,
+        process_id: str,
+        input_data: str,
+        yield_time_ms: int = 2500,
+    ) -> Tuple[str, Optional[str], Optional[int]]:
+        """Write input to an existing session.
+
+        Returns: (output, process_id if still alive, exit_code if exited)
+        """
+        with self._lock:
+            session = self._sessions.get(process_id)
+            if not session:
+                return f"Error: Unknown session ID: {process_id}", None, None
+
+            session.last_used = time.time()
+
+        # Send input
+        if input_data:
+            session.write(input_data)
+            time.sleep(0.1)  # Brief delay for process to react
+
+        # Read output
+        yield_time_ms = max(MIN_YIELD_TIME_MS, min(yield_time_ms, MAX_YIELD_TIME_MS))
+        output = session.read_output(yield_time_ms)
+
+        if session.has_exited():
+            # Session ended, remove from store
+            with self._lock:
+                if process_id in self._sessions:
+                    del self._sessions[process_id]
+            return output, None, session.exit_code()
+        else:
+            return output, process_id, None
+
+    def _fallback_exec(
+        self,
+        command: list,
+        cwd: Path,
+        env: Optional[dict],
+    ) -> Tuple[str, str, Optional[str], Optional[int]]:
+        """Fallback to subprocess when PTY not available."""
+        import subprocess
+
+        try:
+            spawn_env = os.environ.copy()
+            if env:
+                spawn_env.update(env)
+            spawn_env.update(PTY_ENV)
+
+            result = subprocess.run(
+                command,
+                cwd=str(cwd),
+                env=spawn_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            output = result.stdout
+            if result.stderr:
+                output += f"\nstderr: {result.stderr}"
+
+            return output, "", None, result.returncode
+
+        except subprocess.TimeoutExpired:
+            return "Command timed out", "", None, -1
+        except Exception as e:
+            return f"Error: {e}", "", None, -1
+
+    def terminate_session(self, process_id: str) -> bool:
+        """Terminate a specific session."""
+        with self._lock:
+            session = self._sessions.pop(process_id, None)
+            if session:
+                session.terminate()
+                return True
+            return False
+
+    def terminate_all(self):
+        """Terminate all sessions."""
+        with self._lock:
+            for session in self._sessions.values():
+                session.terminate()
+            self._sessions.clear()
+
+    def list_sessions(self) -> list:
+        """List all active session IDs."""
+        with self._lock:
+            return list(self._sessions.keys())
+
+    def session_count(self) -> int:
+        """Get the number of active sessions."""
+        with self._lock:
+            return len(self._sessions)
+</file>
+
+<file path="minimal_codex/streaming.py">
+"""Token streaming controller for the Minimal Codex Agent.
+
+Matches Codex's streaming/controller.rs and markdown_stream.rs pattern:
+- Newline-gated commit: only output complete lines as they arrive
+- Buffer partial content until newline
+- Finalize flushes any remaining partial content
+
+This is a simplified Python version focused on stdout output rather than TUI.
+"""
+
+import sys
+from typing import Callable, Optional
+
+
+class DeltaCollector:
+    """Newline-gated accumulator that commits only complete lines.
+
+    Matches Codex's MarkdownStreamCollector logic.
+    """
+
+    def __init__(self):
+        self.buffer: str = ""
+        self.committed_offset: int = 0
+
+    def clear(self):
+        """Reset the collector state."""
+        self.buffer = ""
+        self.committed_offset = 0
+
+    def push_delta(self, delta: str):
+        """Add a delta to the buffer."""
+        self.buffer += delta
+
+    def commit_complete_lines(self) -> str:
+        """Return newly completed lines (up to last newline).
+
+        Only content up to and including the last newline is considered
+        complete. Returns empty string if no new complete lines.
+        """
+        # Find the last newline in the buffer
+        last_newline = self.buffer.rfind('\n')
+        if last_newline == -1:
+            return ""
+
+        # Extract content from committed_offset to last_newline (inclusive)
+        complete_end = last_newline + 1
+        if complete_end <= self.committed_offset:
+            return ""
+
+        new_content = self.buffer[self.committed_offset:complete_end]
+        self.committed_offset = complete_end
+        return new_content
+
+    def finalize_and_drain(self) -> str:
+        """Finalize: return all remaining content including partial lines."""
+        remaining = self.buffer[self.committed_offset:]
+        self.clear()
+        return remaining
+
+
+class StreamController:
+    """Controller for streaming tokens to stdout.
+
+    Matches Codex's StreamController pattern with newline-gated output.
+    """
+
+    def __init__(self, output_fn: Optional[Callable[[str], None]] = None):
+        """Initialize the stream controller.
+
+        Args:
+            output_fn: Function to call with output. Defaults to sys.stdout.write
+        """
+        self.collector = DeltaCollector()
+        self.output_fn = output_fn or self._default_output
+        self.has_seen_delta = False
+        self._needs_flush = False
+
+    def _default_output(self, text: str):
+        """Default output: write to stdout and flush."""
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def push(self, delta: str) -> bool:
+        """Push a delta; output complete lines if newline present.
+
+        Returns True if output was emitted.
+        """
+        if not delta:
+            return False
+
+        self.has_seen_delta = True
+        self.collector.push_delta(delta)
+
+        if '\n' in delta:
+            complete = self.collector.commit_complete_lines()
+            if complete:
+                self.output_fn(complete)
+                return True
+
+        return False
+
+    def finalize(self) -> str:
+        """Finalize the stream, outputting any remaining content.
+
+        Returns the final content that was output.
+        """
+        remaining = self.collector.finalize_and_drain()
+        if remaining:
+            # Ensure final output ends with newline for clean formatting
+            if not remaining.endswith('\n'):
+                remaining += '\n'
+            self.output_fn(remaining)
+
+        self.has_seen_delta = False
+        return remaining
+
+    def is_idle(self) -> bool:
+        """Check if there's no pending content."""
+        return self.collector.committed_offset >= len(self.collector.buffer)
+
+
+def stream_response(response_iterator, output_fn: Optional[Callable[[str], None]] = None) -> str:
+    """Stream a response iterator, outputting tokens as they arrive.
+
+    This is the main entry point for streaming LiteLLM responses.
+
+    Args:
+        response_iterator: An iterator yielding response chunks (from LiteLLM stream=True)
+        output_fn: Optional output function, defaults to stdout
+
+    Returns:
+        The complete accumulated response text
+    """
+    controller = StreamController(output_fn)
+    full_content = ""
+
+    for chunk in response_iterator:
+        # LiteLLM streaming chunk format
+        if hasattr(chunk, 'choices') and chunk.choices:
+            delta = chunk.choices[0].delta
+            if hasattr(delta, 'content') and delta.content:
+                content = delta.content
+                full_content += content
+                controller.push(content)
+
+    # Finalize to flush any remaining partial content
+    controller.finalize()
+
+    return full_content
+</file>
+
+<file path="README.md">
+# Minimal Codex Agent
+
+A 1:1 replica of Codex CLI's autonomous agent logic
+
+## Features
+
+- Exact match of Codex CLI's `apply_patch` with 4-level fuzzy matching (`seek_sequence`)
+- ATIF v1.4 trajectory format support for Harbor visualization
+- LiteLLM integration for any OpenAI-compatible API
+- Parallel tool execution where supported
+- AGENTS.md discovery and loading
+
+## Installation
+
+```bash
+pip install git+https://github.com/YOUR_USERNAME/minimal-codex.git
+```
+
+Or with uv:
+```bash
+uv tool install git+https://github.com/YOUR_USERNAME/minimal-codex.git
+```
+
+## Usage
+
+```bash
+minimal-codex --task "Your task here" --model "model-name" --output results.json --trajectory trajectory.json
+```
+
+## Tools
+
+- `shell_command` - Run shell commands
+- `apply_patch` - Edit files using Codex's exact patch format
+- `read_file` - Read file contents with line numbers
+- `list_dir` - List directory entries
+- `grep_files` - Search files using regex
+- `update_plan` - Track multi-step task progress
+
+## License
+
+MIT
+</file>
+
+<file path="minimal_codex/__init__.py">
+"""Minimal Codex Agent - A 1:1 replica of Codex CLI's autonomous agent logic."""
+
+from .agent import CodexAgent, convert_to_atif, main
+from .features import Features, Feature
+from .tools import (
+    TOOLS,
+    CORE_TOOLS,
+    WEB_SEARCH_TOOL,
+    EXEC_COMMAND_TOOL,
+    WRITE_STDIN_TOOL,
+    SAVE_PLAN_TOOL,
+    create_invoke_subagent_tool,
+    execute_tool,
+)
+from .prompts import get_system_prompt
+from .context import build_initial_messages
+from .apply_patch import apply_patch
+from .streaming import StreamController, DeltaCollector, stream_response
+from .pty_shell import PtySessionManager, PtySession, HAS_PTY
+from .subagents import SubagentConfig, SubagentSession, SubagentManager
+from .plan_manager import PlanManager
+from .prompt_templates import load_prompt_template, resolve_template
+
+__version__ = "0.3.0"
+
+__all__ = [
+    # Agent
+    "CodexAgent",
+    "convert_to_atif",
+    "main",
+    # Features
+    "Features",
+    "Feature",
+    # Tools
+    "TOOLS",
+    "CORE_TOOLS",
+    "WEB_SEARCH_TOOL",
+    "EXEC_COMMAND_TOOL",
+    "WRITE_STDIN_TOOL",
+    "SAVE_PLAN_TOOL",
+    "create_invoke_subagent_tool",
+    "execute_tool",
+    # Context/Prompts
+    "get_system_prompt",
+    "build_initial_messages",
+    "apply_patch",
+    # Streaming
+    "StreamController",
+    "DeltaCollector",
+    "stream_response",
+    # PTY
+    "PtySessionManager",
+    "PtySession",
+    "HAS_PTY",
+    # Subagents
+    "SubagentConfig",
+    "SubagentSession",
+    "SubagentManager",
+    # Plan Mode
+    "PlanManager",
+    # Prompt Templates
+    "load_prompt_template",
+    "resolve_template",
+]
+</file>
+
+<file path="minimal_codex/apply_patch.py">
+"""Apply patch implementation matching Codex CLI's exact format.
+
+Implements the exact algorithms from Codex's Rust implementation:
+- seek_sequence.rs: 4-level fuzzy matching
+- parser.rs: Lenient heredoc handling
+- lib.rs: compute_replacements + apply_replacements (reverse order)
+
+Supports:
+- *** Add File: path/to/new.py
+- *** Delete File: path/to/old.py
+- *** Update File: path/to/file.py
+- *** Move to: path/to/newname.py
+- @@ context markers
+- +/- line additions/removals
+- Lenient heredoc wrappers (<<EOF, <<'EOF', <<"EOF")
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+
+# ============================================================================
+# Patch Markers (exact Codex constants from parser.rs)
+# ============================================================================
+
+BEGIN_PATCH_MARKER = "*** Begin Patch"
+END_PATCH_MARKER = "*** End Patch"
+ADD_FILE_MARKER = "*** Add File: "
+DELETE_FILE_MARKER = "*** Delete File: "
+UPDATE_FILE_MARKER = "*** Update File: "
+MOVE_TO_MARKER = "*** Move to: "
+EOF_MARKER = "*** End of File"
+CHANGE_CONTEXT_MARKER = "@@ "
+EMPTY_CHANGE_CONTEXT_MARKER = "@@"
+
+
+# ============================================================================
+# Unicode Normalization (exact match to Codex's seek_sequence.rs)
+# ============================================================================
+
+UNICODE_NORMALIZATIONS = {
+    # Various dash/hyphen code-points → ASCII '-'
+    '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2013': '-',
+    '\u2014': '-', '\u2015': '-', '\u2212': '-',
+    # Fancy single quotes → '\''
+    '\u2018': "'", '\u2019': "'", '\u201A': "'", '\u201B': "'",
+    # Fancy double quotes → '"'
+    '\u201C': '"', '\u201D': '"', '\u201E': '"', '\u201F': '"',
+    # Non-breaking space and other odd spaces → normal space
+    '\u00A0': ' ', '\u2002': ' ', '\u2003': ' ', '\u2004': ' ',
+    '\u2005': ' ', '\u2006': ' ', '\u2007': ' ', '\u2008': ' ',
+    '\u2009': ' ', '\u200A': ' ', '\u202F': ' ', '\u205F': ' ',
+    '\u3000': ' ',
+}
+
+
+def normalize_unicode(s: str) -> str:
+    """Normalize Unicode characters for fuzzy matching (exact Codex impl)."""
+    result = []
+    for c in s.strip():
+        result.append(UNICODE_NORMALIZATIONS.get(c, c))
+    return ''.join(result)
+
+
+# ============================================================================
+# seek_sequence (exact match to Codex's seek_sequence.rs)
+# ============================================================================
+
+def seek_sequence(
+    lines: list[str],
+    pattern: list[str],
+    start: int = 0,
+    eof: bool = False
+) -> Optional[int]:
+    """Find pattern sequence in lines with decreasing strictness.
+
+    Matches Codex's seek_sequence.rs exactly:
+    1. Exact match
+    2. Trim trailing whitespace (rstrip)
+    3. Trim both sides
+    4. Unicode normalization
+
+    Args:
+        lines: File content lines
+        pattern: Lines to search for
+        start: Starting index
+        eof: If True, try matching from end of file first
+
+    Returns:
+        Starting index of match, or None if not found
+    """
+    if not pattern:
+        return start
+
+    # Pattern longer than input - impossible match
+    if len(pattern) > len(lines):
+        return None
+
+    # When eof is set, start searching from the end
+    search_start = len(lines) - len(pattern) if eof else start
+
+    # Level 1: Exact match
+    for i in range(search_start, len(lines) - len(pattern) + 1):
+        if lines[i:i + len(pattern)] == pattern:
+            return i
+
+    # Level 2: trim_end (rstrip) match
+    for i in range(search_start, len(lines) - len(pattern) + 1):
+        match = True
+        for j, pat in enumerate(pattern):
+            if lines[i + j].rstrip() != pat.rstrip():
+                match = False
+                break
+        if match:
+            return i
+
+    # Level 3: trim both sides
+    for i in range(search_start, len(lines) - len(pattern) + 1):
+        match = True
+        for j, pat in enumerate(pattern):
+            if lines[i + j].strip() != pat.strip():
+                match = False
+                break
+        if match:
+            return i
+
+    # Level 4: Unicode normalization (most permissive)
+    for i in range(search_start, len(lines) - len(pattern) + 1):
+        match = True
+        for j, pat in enumerate(pattern):
+            if normalize_unicode(lines[i + j]) != normalize_unicode(pat):
+                match = False
+                break
+        if match:
+            return i
+
+    return None
+
+
+# ============================================================================
+# Patch Data Classes (from parser.rs)
+# ============================================================================
+
+@dataclass
+class UpdateFileChunk:
+    """A chunk within an Update File hunk."""
+    change_context: Optional[str]  # Context line (class/function hint)
+    old_lines: list[str]
+    new_lines: list[str]
+    is_end_of_file: bool = False
+
+
+@dataclass
+class Hunk:
+    """Base class for file operation hunks."""
+    pass
+
+
+@dataclass
+class AddFile(Hunk):
+    path: Path
+    contents: str
+
+
+@dataclass
+class DeleteFile(Hunk):
+    path: Path
+
+
+@dataclass
+class UpdateFile(Hunk):
+    path: Path
+    move_path: Optional[Path]
+    chunks: list[UpdateFileChunk]
+
+
+# ============================================================================
+# Patch Parser (exact match to Codex's parser.rs)
+# ============================================================================
+
+def parse_patch(patch: str, lenient: bool = True) -> list[Hunk]:
+    """Parse patch text into hunks.
+
+    Args:
+        patch: Raw patch text
+        lenient: If True, handle heredoc wrappers (<<EOF ... EOF)
+
+    Returns:
+        List of parsed hunks
+    """
+    lines = patch.strip().split('\n')
+
+    # Check boundaries
+    if not _check_patch_boundaries_strict(lines):
+        if lenient:
+            lines = _check_patch_boundaries_lenient(lines)
+            if lines is None:
+                raise ValueError("Invalid patch: missing Begin/End markers")
+        else:
+            raise ValueError("Invalid patch: missing Begin/End markers")
+
+    # Parse hunks
+    hunks = []
+    i = 1  # Skip "*** Begin Patch"
+    last_line = len(lines) - 1  # Before "*** End Patch"
+
+    while i < last_line:
+        hunk, consumed = _parse_one_hunk(lines, i)
+        if hunk:
+            hunks.append(hunk)
+        i += consumed
+
+    return hunks
+
+
+def _check_patch_boundaries_strict(lines: list[str]) -> bool:
+    """Check if patch has valid Begin/End markers."""
+    if len(lines) < 2:
+        return False
+    return (lines[0].strip() == BEGIN_PATCH_MARKER and
+            lines[-1].strip() == END_PATCH_MARKER)
+
+
+def _check_patch_boundaries_lenient(lines: list[str]) -> Optional[list[str]]:
+    """Handle heredoc wrappers: <<EOF, <<'EOF', <<"EOF" (from parser.rs)"""
+    if len(lines) < 4:
+        return None
+
+    first = lines[0].strip()
+    last = lines[-1].strip()
+
+    # Check for heredoc markers
+    if first in ("<<EOF", "<<'EOF'", '<<"EOF"') and last.endswith("EOF"):
+        inner = lines[1:-1]
+        if _check_patch_boundaries_strict(inner):
+            return inner
+
+    return None
+
+
+def _parse_one_hunk(lines: list[str], start: int) -> tuple[Optional[Hunk], int]:
+    """Parse a single hunk starting at line index."""
+    line = lines[start].strip()
+
+    if line.startswith(ADD_FILE_MARKER):
+        path = line[len(ADD_FILE_MARKER):]
+        contents = []
+        i = start + 1
+        while i < len(lines) and lines[i].startswith('+'):
+            contents.append(lines[i][1:])
+            i += 1
+        return AddFile(Path(path), '\n'.join(contents) + '\n' if contents else ''), i - start
+
+    elif line.startswith(DELETE_FILE_MARKER):
+        path = line[len(DELETE_FILE_MARKER):]
+        return DeleteFile(Path(path)), 1
+
+    elif line.startswith(UPDATE_FILE_MARKER):
+        path = line[len(UPDATE_FILE_MARKER):]
+        i = start + 1
+
+        # Check for Move to:
+        move_path = None
+        if i < len(lines) and lines[i].strip().startswith(MOVE_TO_MARKER):
+            move_path = Path(lines[i].strip()[len(MOVE_TO_MARKER):])
+            i += 1
+
+        # Parse chunks
+        chunks = []
+        is_first_chunk = True
+        while i < len(lines):
+            # Skip blank lines between chunks
+            if lines[i].strip() == "":
+                i += 1
+                continue
+
+            # Stop at next file operation
+            if lines[i].strip().startswith("***") and not lines[i].strip() == EOF_MARKER:
+                break
+
+            chunk, consumed = _parse_update_chunk(lines, i, is_first_chunk)
+            if chunk:
+                chunks.append(chunk)
+            i += consumed
+            is_first_chunk = False
+
+        return UpdateFile(Path(path), move_path, chunks), i - start
+
+    return None, 1
+
+
+def _parse_update_chunk(
+    lines: list[str],
+    start: int,
+    allow_missing_context: bool
+) -> tuple[Optional[UpdateFileChunk], int]:
+    """Parse an update chunk (context + changes)."""
+    if start >= len(lines):
+        return None, 0
+
+    line = lines[start]
+    change_context = None
+    i = start
+
+    # Parse @@ context marker
+    if line.strip() == EMPTY_CHANGE_CONTEXT_MARKER:
+        i += 1
+    elif line.strip().startswith(CHANGE_CONTEXT_MARKER):
+        change_context = line.strip()[len(CHANGE_CONTEXT_MARKER):]
+        i += 1
+    elif not allow_missing_context:
+        return None, 1
+
+    # Parse change lines
+    old_lines = []
+    new_lines = []
+    is_eof = False
+
+    while i < len(lines):
+        l = lines[i]
+
+        if l.strip() == EOF_MARKER:
+            is_eof = True
+            i += 1
+            break
+
+        if l.strip().startswith("***") or l.startswith("@@"):
+            break
+
+        if l == "" or (len(l) > 0 and l[0] not in " +-"):
+            # Empty line = context
+            if l == "":
+                old_lines.append("")
+                new_lines.append("")
+                i += 1
+                continue
+            break
+
+        if l.startswith(" "):
+            old_lines.append(l[1:])
+            new_lines.append(l[1:])
+        elif l.startswith("-"):
+            old_lines.append(l[1:])
+        elif l.startswith("+"):
+            new_lines.append(l[1:])
+
+        i += 1
+
+    if not old_lines and not new_lines:
+        return None, i - start
+
+    return UpdateFileChunk(change_context, old_lines, new_lines, is_eof), i - start
+
+
+# ============================================================================
+# compute_replacements + apply_replacements (exact match to Codex's lib.rs)
+# ============================================================================
+
+def compute_replacements(
+    original_lines: list[str],
+    path: Path,
+    chunks: list[UpdateFileChunk]
+) -> list[tuple[int, int, list[str]]]:
+    """Compute replacements needed to transform file.
+
+    Returns list of (start_index, old_len, new_lines).
+    """
+    replacements = []
+    line_index = 0
+
+    for chunk in chunks:
+        # If chunk has context, use seek_sequence to find it
+        if chunk.change_context:
+            idx = seek_sequence(
+                original_lines,
+                [chunk.change_context],
+                line_index,
+                False
+            )
+            if idx is not None:
+                line_index = idx + 1
+            else:
+                raise ValueError(f"Failed to find context '{chunk.change_context}' in {path}")
+
+        if not chunk.old_lines:
+            # Pure addition at end
+            insertion_idx = len(original_lines)
+            if original_lines and original_lines[-1] == "":
+                insertion_idx -= 1
+            replacements.append((insertion_idx, 0, chunk.new_lines))
+            continue
+
+        # Find old_lines in file
+        pattern = chunk.old_lines
+        new_slice = chunk.new_lines
+
+        found = seek_sequence(original_lines, pattern, line_index, chunk.is_end_of_file)
+
+        # Handle trailing empty line edge case
+        if found is None and pattern and pattern[-1] == "":
+            pattern = pattern[:-1]
+            if new_slice and new_slice[-1] == "":
+                new_slice = new_slice[:-1]
+            found = seek_sequence(original_lines, pattern, line_index, chunk.is_end_of_file)
+
+        if found is not None:
+            replacements.append((found, len(pattern), list(new_slice)))
+            line_index = found + len(pattern)
+        else:
+            raise ValueError(f"Failed to find expected lines in {path}")
+
+    # Sort by start index
+    replacements.sort(key=lambda x: x[0])
+    return replacements
+
+
+def apply_replacements(
+    lines: list[str],
+    replacements: list[tuple[int, int, list[str]]]
+) -> list[str]:
+    """Apply replacements in reverse order to avoid index shifting."""
+    result = list(lines)
+
+    # Apply in reverse order
+    for start_idx, old_len, new_segment in reversed(replacements):
+        # Remove old lines
+        for _ in range(old_len):
+            if start_idx < len(result):
+                result.pop(start_idx)
+
+        # Insert new lines
+        for offset, new_line in enumerate(new_segment):
+            result.insert(start_idx + offset, new_line)
+
+    return result
+
+
+# ============================================================================
+# Main apply_patch Function
+# ============================================================================
+
+def apply_patch(patch: str, cwd: Path) -> str:
+    """Apply patch using exact Codex algorithm.
+
+    Args:
+        patch: The patch content in Codex format
+        cwd: Current working directory (base for relative paths)
+
+    Returns:
+        Result message describing what was done
+    """
+    try:
+        hunks = parse_patch(patch, lenient=True)
+    except ValueError as e:
+        return f"Error: {e}"
+
+    results = []
+
+    for hunk in hunks:
+        if isinstance(hunk, AddFile):
+            full_path = cwd / hunk.path
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(hunk.contents, encoding='utf-8')
+            results.append(f"A {hunk.path}")
+
+        elif isinstance(hunk, DeleteFile):
+            full_path = cwd / hunk.path
+            if full_path.exists():
+                full_path.unlink()
+                results.append(f"D {hunk.path}")
+            else:
+                results.append(f"Warning: {hunk.path} not found")
+
+        elif isinstance(hunk, UpdateFile):
+            full_path = cwd / hunk.path
+            if not full_path.exists():
+                results.append(f"Error: {hunk.path} not found")
+                continue
+
+            try:
+                content = full_path.read_text(encoding='utf-8')
+            except Exception as e:
+                results.append(f"Error reading {hunk.path}: {e}")
+                continue
+
+            original_lines = content.split('\n')
+
+            # Drop trailing empty line (matches Codex behavior)
+            if original_lines and original_lines[-1] == "":
+                original_lines.pop()
+
+            try:
+                replacements = compute_replacements(original_lines, hunk.path, hunk.chunks)
+                new_lines = apply_replacements(original_lines, replacements)
+
+                # Ensure trailing newline
+                if not new_lines or new_lines[-1] != "":
+                    new_lines.append("")
+
+                new_content = '\n'.join(new_lines)
+
+                if hunk.move_path:
+                    dest = cwd / hunk.move_path
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(new_content, encoding='utf-8')
+                    full_path.unlink()
+                    results.append(f"M {hunk.move_path}")
+                else:
+                    full_path.write_text(new_content, encoding='utf-8')
+                    results.append(f"U {hunk.path}")
+
+            except ValueError as e:
+                results.append(f"Error: {e}")
+
+    return "Success. Updated the following files:\n" + '\n'.join(results) if results else "No changes"
+
+
+def validate_patch(patch: str) -> Optional[str]:
+    """Validate patch format without applying.
+
+    Returns:
+        None if valid, error message if invalid
+    """
+    try:
+        parse_patch(patch, lenient=True)
+        return None
+    except ValueError as e:
+        return str(e)
+</file>
+
+<file path="minimal_codex/prompts.py">
+"""System prompts for the Minimal Codex Agent.
+
+Loads the exact Codex prompt from prompts/system_prompt.md for Terminal-Bench compatibility.
+"""
+
+from pathlib import Path
+
+# Load prompt from file at module load time
+_PROMPT_FILE = Path(__file__).parent / "prompts" / "system_prompt.md"
+SYSTEM_PROMPT = _PROMPT_FILE.read_text(encoding="utf-8")
+
+# Environment context template (matching Codex's format)
+ENVIRONMENT_CONTEXT_TEMPLATE = '''<environment_context>
+  <cwd>{cwd}</cwd>
+  <approval_policy>never</approval_policy>
+  <sandbox_mode>danger-full-access</sandbox_mode>
+  <network_access>enabled</network_access>
+  <shell>bash</shell>
+</environment_context>'''
+
+
+def get_system_prompt(model_name: str = "") -> str:
+    """Get the system prompt.
+
+    Args:
+        model_name: Model name (unused, kept for API compatibility)
+
+    Returns:
+        System prompt string (exact Codex prompt from prompt.md)
+    """
+    return SYSTEM_PROMPT
+
+
+def get_environment_context(cwd: str = "/app") -> str:
+    """Get the environment context message.
+
+    Args:
+        cwd: Current working directory
+
+    Returns:
+        Environment context XML string
+    """
+    return ENVIRONMENT_CONTEXT_TEMPLATE.format(cwd=cwd)
+</file>
+
+<file path="minimal_codex/tools.py">
+"""Tool definitions for the Minimal Codex Agent.
+
+These match Codex CLI's exact tool specifications.
+"""
+
+import subprocess
+import re
+import fnmatch
+import json
+from pathlib import Path
+from typing import Any, Optional
+
+# Optional web search support
+try:
+    from duckduckgo_search import DDGS
+    HAS_WEB_SEARCH = True
+except ImportError:
+    HAS_WEB_SEARCH = False
+
+# Tool definitions in OpenAI function calling format
+
+SHELL_COMMAND_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "shell_command",
+        "description": "Runs a shell command and returns output. Use rg (ripgrep) for fast searching.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell script to execute"
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory (optional)"
+                },
+                "timeout_ms": {
+                    "type": "number",
+                    "description": "Timeout in milliseconds (default 120000)"
+                }
+            },
+            "required": ["command"],
+            "additionalProperties": False
+        }
+    }
+}
+
+APPLY_PATCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "apply_patch",
+        "description": """Edit files using patch format. This is a FREEFORM tool - provide the patch directly.
+
+Format:
+*** Begin Patch
+*** Add File: path/to/new.py
++line1
++line2
+*** Delete File: path/to/old.py
+*** Update File: path/to/file.py
+*** Move to: path/to/newname.py
+@@ def function_name():
+ context line (unchanged)
+-line to remove
++line to add
+*** End of File
+*** End Patch
+
+Rules:
+- Lines with + are additions
+- Lines with - are removals
+- Lines with space are context (help locate the change)
+- @@ markers show context/location hints
+- *** End of File marks EOF-relative changes""",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "patch": {
+                    "type": "string",
+                    "description": "The patch content"
+                }
+            },
+            "required": ["patch"],
+            "additionalProperties": False
+        }
+    }
+}
+
+UPDATE_PLAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "update_plan",
+        "description": "Updates the task plan. At most one step can be in_progress at a time. Do not use for simple tasks.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "explanation": {
+                    "type": "string",
+                    "description": "Optional explanation of plan changes"
+                },
+                "plan": {
+                    "type": "array",
+                    "description": "List of plan steps (5-7 words each)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+                        },
+                        "required": ["step", "status"],
+                        "additionalProperties": False
+                    }
+                }
+            },
+            "required": ["plan"],
+            "additionalProperties": False
+        }
+    }
+}
+
+READ_FILE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Read file contents with 1-indexed line numbers",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "offset": {"type": "number", "description": "Start line (1-indexed)"},
+                "limit": {"type": "number", "description": "Max lines to read"}
+            },
+            "required": ["file_path"],
+            "additionalProperties": False
+        }
+    }
+}
+
+LIST_DIR_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "list_dir",
+        "description": "List directory entries with depth control",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "dir_path": {"type": "string"},
+                "depth": {"type": "number", "description": "Max depth (default 1)"},
+                "limit": {"type": "number", "description": "Max entries"}
+            },
+            "required": ["dir_path"],
+            "additionalProperties": False
+        }
+    }
+}
+
+GREP_FILES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "grep_files",
+        "description": "Find files matching regex pattern, sorted by modification time",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Regex pattern"},
+                "path": {"type": "string", "description": "Directory to search"},
+                "include": {"type": "string", "description": "Glob pattern for files"},
+                "limit": {"type": "number", "description": "Max results"}
+            },
+            "required": ["pattern"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# Web search tool (matches Codex's Feature::WebSearchRequest)
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "Search the web and return relevant results with titles, snippets, and URLs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query"
+                },
+                "num_results": {
+                    "type": "number",
+                    "description": "Number of results to return (default 5, max 10)"
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# Save plan tool (for Plan subagent to save its implementation plan)
+SAVE_PLAN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "save_plan",
+        "description": "Save the implementation plan. Call this when you have completed the planning phase.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "description": "Implementation steps (5-7 words each)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending"]}
+                        },
+                        "required": ["step", "status"],
+                        "additionalProperties": False
+                    }
+                },
+                "critical_files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "File paths critical for implementation (3-5 files)"
+                }
+            },
+            "required": ["steps", "critical_files"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# PTY execution tools (matches Codex's unified_exec when Feature::UnifiedExec enabled)
+EXEC_COMMAND_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "exec_command",
+        "description": """Execute a command in a persistent PTY shell session.
+
+Unlike shell_command, this creates an interactive PTY session that persists
+across multiple calls. Use for:
+- Interactive commands that expect TTY input
+- Long-running processes (servers, watchers)
+- Commands that need persistent state (environment variables, working directory)
+
+Returns a process_id if the command is still running, which can be used with
+write_stdin to send additional input.""",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Command and arguments as array, e.g. ['bash', '-c', 'echo hello']"
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory (optional)"
+                },
+                "yield_time_ms": {
+                    "type": "number",
+                    "description": "Time to wait for output in milliseconds (default 2500, max 30000)"
+                }
+            },
+            "required": ["command"],
+            "additionalProperties": False
+        }
+    }
+}
+
+WRITE_STDIN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "write_stdin",
+        "description": """Write input to a running PTY session.
+
+Use this to interact with a process started via exec_command. The process_id
+is returned from the initial exec_command call.""",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "process_id": {
+                    "type": "string",
+                    "description": "The process ID from exec_command"
+                },
+                "input": {
+                    "type": "string",
+                    "description": "Input to send (include \\n for Enter)"
+                },
+                "yield_time_ms": {
+                    "type": "number",
+                    "description": "Time to wait for output in milliseconds (default 2500)"
+                }
+            },
+            "required": ["process_id", "input"],
+            "additionalProperties": False
+        }
+    }
+}
+
+# Core tools (always available)
+CORE_TOOLS = [
+    SHELL_COMMAND_TOOL,
+    APPLY_PATCH_TOOL,
+    UPDATE_PLAN_TOOL,
+    READ_FILE_TOOL,
+    LIST_DIR_TOOL,
+    GREP_FILES_TOOL,
+    SAVE_PLAN_TOOL,
+]
+
+# All tools combined (for backward compatibility)
+TOOLS = CORE_TOOLS.copy()
+
+# Tools that can run in parallel (read-only or idempotent)
+PARALLEL_TOOLS = {"update_plan", "read_file", "list_dir", "grep_files", "web_search", "save_plan"}
+# Tools that need exclusive access (side effects)
+SEQUENTIAL_TOOLS = {"shell_command", "apply_patch", "exec_command", "write_stdin", "invoke_subagent"}
+
+# Truncation settings
+MAX_TOOL_OUTPUT_BYTES = 10000
+
+
+def truncate_output(output: str, max_bytes: int = MAX_TOOL_OUTPUT_BYTES) -> str:
+    """Truncate output preserving beginning and end (Codex style)."""
+    if len(output) <= max_bytes:
+        return output
+
+    # Split budget: 40% beginning, 40% end, 20% for marker
+    left_budget = int(max_bytes * 0.4)
+    right_budget = int(max_bytes * 0.4)
+
+    left = output[:left_budget]
+    right = output[-right_budget:]
+    omitted = len(output) - left_budget - right_budget
+
+    return f"{left}\n\n... [{omitted} characters omitted] ...\n\n{right}"
+
+
+def execute_shell(args: dict, cwd: Path) -> str:
+    """Execute shell command."""
+    command = args["command"]
+    workdir = args.get("workdir", str(cwd))
+    timeout_ms = args.get("timeout_ms", 120000)
+    timeout_sec = timeout_ms / 1000
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec
+        )
+
+        output_parts = []
+        if result.stdout:
+            output_parts.append(result.stdout)
+        if result.stderr:
+            output_parts.append(f"stderr: {result.stderr}")
+        output_parts.append(f"exit code: {result.returncode}")
+
+        return "\n".join(output_parts)
+
+    except subprocess.TimeoutExpired:
+        return f"Command timed out after {timeout_sec}s"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def read_file(args: dict, cwd: Path) -> str:
+    """Read file contents with line numbers."""
+    file_path = args["file_path"]
+
+    # Handle absolute and relative paths
+    if Path(file_path).is_absolute():
+        path = Path(file_path)
+    else:
+        path = cwd / file_path
+
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").split('\n')
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    offset = args.get("offset", 1) - 1  # Convert to 0-indexed
+    limit = args.get("limit", len(lines))
+
+    result_lines = []
+    for i, line in enumerate(lines[offset:offset+limit], start=offset+1):
+        result_lines.append(f"{i:6d}\t{line}")
+
+    return '\n'.join(result_lines)
+
+
+def list_dir(args: dict, cwd: Path) -> str:
+    """List directory entries."""
+    dir_path = args["dir_path"]
+
+    # Handle absolute and relative paths
+    if Path(dir_path).is_absolute():
+        path = Path(dir_path)
+    else:
+        path = cwd / dir_path
+
+    if not path.exists():
+        return f"Error: Directory not found: {dir_path}"
+    if not path.is_dir():
+        return f"Error: Not a directory: {dir_path}"
+
+    depth = args.get("depth", 1)
+    limit = args.get("limit", 100)
+
+    entries = []
+
+    def walk(p: Path, current_depth: int):
+        if current_depth > depth or len(entries) >= limit:
+            return
+        try:
+            for item in sorted(p.iterdir()):
+                if len(entries) >= limit:
+                    break
+                try:
+                    rel = item.relative_to(cwd)
+                except ValueError:
+                    rel = item
+                entries.append(str(rel) + ("/" if item.is_dir() else ""))
+                if item.is_dir() and current_depth < depth:
+                    walk(item, current_depth + 1)
+        except PermissionError:
+            pass
+
+    walk(path, 1)
+    return '\n'.join(entries) if entries else "(empty directory)"
+
+
+def grep_files(args: dict, cwd: Path) -> str:
+    """Search files using ripgrep or fallback."""
+    pattern = args["pattern"]
+    search_path = cwd / args.get("path", ".")
+    include = args.get("include", "*")
+    limit = args.get("limit", 50)
+
+    # Try ripgrep first (faster)
+    try:
+        cmd = ["rg", "-l", "--glob", include, pattern, str(search_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            files = [f for f in result.stdout.strip().split('\n') if f][:limit]
+            return '\n'.join(files) if files else "No matches found"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback to Python regex
+    matches = []
+    try:
+        regex = re.compile(pattern)
+    except re.error as e:
+        return f"Error: Invalid regex pattern: {e}"
+
+    for f in search_path.rglob("*"):
+        if len(matches) >= limit:
+            break
+        if f.is_file() and fnmatch.fnmatch(f.name, include):
+            try:
+                content = f.read_text(encoding="utf-8", errors="replace")
+                if regex.search(content):
+                    try:
+                        matches.append(str(f.relative_to(cwd)))
+                    except ValueError:
+                        matches.append(str(f))
+            except Exception:
+                pass
+
+    return '\n'.join(matches) if matches else "No matches found"
+
+
+def update_plan(args: dict, current_plan: list) -> tuple[str, list]:
+    """Update the task plan. Returns (message, updated_plan)."""
+    new_plan = args["plan"]
+    explanation = args.get("explanation", "")
+
+    # Validate: at most one in_progress
+    in_progress = [s for s in new_plan if s["status"] == "in_progress"]
+    if len(in_progress) > 1:
+        return "Warning: Multiple steps marked in_progress", new_plan
+
+    return (f"Plan updated. {explanation}" if explanation else "Plan updated."), new_plan
+
+
+def execute_web_search(args: dict) -> str:
+    """Execute web search using DuckDuckGo (free, no API key required).
+
+    Matches Codex's Feature::WebSearchRequest functionality.
+    """
+    if not HAS_WEB_SEARCH:
+        return "Error: Web search not available. Install with: pip install duckduckgo-search"
+
+    query = args["query"]
+    num_results = min(args.get("num_results", 5), 10)
+
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=num_results))
+
+        if not results:
+            return f"No results found for: {query}"
+
+        # Format results similar to how Codex would present them
+        formatted = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "No title")
+            body = r.get("body", "No description")
+            href = r.get("href", "")
+            formatted.append(f"{i}. {title}\n   {body}\n   URL: {href}")
+
+        return "\n\n".join(formatted)
+
+    except Exception as e:
+        return f"Web search error: {str(e)}"
+
+
+def create_invoke_subagent_tool(available_subagents: list[dict]) -> dict:
+    """Create invoke_subagent tool with dynamic subagent list.
+
+    Args:
+        available_subagents: List of {"name": str, "description": str} dicts
+
+    Returns:
+        Tool definition dict for invoke_subagent
+    """
+    # Build description with available subagents
+    subagent_list = "\n".join(
+        f"  - {s['name']}: {s['description']}"
+        for s in available_subagents
+    )
+
+    return {
+        "type": "function",
+        "function": {
+            "name": "invoke_subagent",
+            "description": f"""Invoke a specialized subagent to handle a specific task.
+
+Subagents run in isolated context and return their findings. Use them to:
+- Explore codebase without polluting your context
+- Get specialized perspectives (security, performance, etc.)
+- Parallelize research across multiple focuses
+
+IMPORTANT: Subagents cannot invoke other subagents (single-level delegation).
+
+Available subagents:
+{subagent_list}
+
+Custom subagents can be added via .tessa/agents/*.md files.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the subagent to invoke (e.g., 'Plan', 'Explore', 'general-purpose')"
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "The specific task for the subagent to accomplish"
+                    },
+                    "max_turns": {
+                        "type": "number",
+                        "description": "Maximum turns before subagent returns (default 10)"
+                    },
+                    "resume_id": {
+                        "type": "string",
+                        "description": "Optional agent_id to resume a previous session"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional context/findings to share with subagent so they don't re-explore. Include any relevant information you've gathered."
+                    }
+                },
+                "required": ["name", "task"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+
+def execute_tool(
+    name: str,
+    args: dict,
+    cwd: Path,
+    plan_manager: Optional[Any] = None,
+    current_task: str = "",
+) -> str:
+    """Execute a tool by name with given arguments.
+
+    This is the central tool dispatcher used by both the main agent
+    and subagents for executing tool calls.
+
+    Args:
+        name: Tool name
+        args: Tool arguments dict
+        cwd: Working directory
+        plan_manager: Optional PlanManager for save_plan tool
+        current_task: Current task description (for save_plan)
+
+    Returns:
+        Tool output string
+    """
+    try:
+        if name == "shell_command":
+            output = execute_shell(args, cwd)
+        elif name == "read_file":
+            output = read_file(args, cwd)
+        elif name == "list_dir":
+            output = list_dir(args, cwd)
+        elif name == "grep_files":
+            output = grep_files(args, cwd)
+        elif name == "apply_patch":
+            # Import here to avoid circular imports
+            from .apply_patch import apply_patch
+            output = apply_patch(args.get("patch", ""), cwd)
+        elif name == "web_search":
+            output = execute_web_search(args)
+        elif name == "update_plan":
+            # Return simple acknowledgment - actual plan tracking is done elsewhere
+            output = "Plan update acknowledged"
+        elif name == "save_plan":
+            # Handle save_plan if plan_manager is provided
+            if plan_manager is None:
+                output = "Error: Plan mode is not enabled"
+            else:
+                path = plan_manager.create_plan(
+                    task=current_task,
+                    steps=args.get("steps", []),
+                    critical_files=args.get("critical_files", []),
+                )
+                output = f"Plan saved to: {path}"
+        else:
+            output = f"Unknown tool: {name}"
+    except Exception as e:
+        output = f"Error executing {name}: {str(e)}"
+
+    return truncate_output(output)
+</file>
+
+<file path="pyproject.toml">
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minimal-codex"
+version = "0.2.0"
+description = "Minimal Codex Agent - A 1:1 replica of Codex CLI's autonomous agent logic"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.0.0",
+]
+
+[project.optional-dependencies]
+# PTY shell support (for exec_command/write_stdin tools)
+pty-unix = ["pexpect>=4.8.0"]
+pty-windows = ["pywinpty>=2.0.0"]
+
+# Web search support
+web = ["duckduckgo-search>=4.0.0"]
+
+# All features
+all = [
+    "pexpect>=4.8.0; sys_platform != 'win32'",
+    "pywinpty>=2.0.0; sys_platform == 'win32'",
+    "duckduckgo-search>=4.0.0",
+]
+
+[project.scripts]
+minimal-codex = "minimal_codex.agent:main"
+
+[project.urls]
+Homepage = "https://github.com/smirki/minimal-codex"
+Repository = "https://github.com/smirki/minimal-codex"
+
+[tool.hatch.build.targets.wheel]
+packages = ["minimal_codex"]
+
+[tool.hatch.build.targets.wheel.sources]
+"minimal_codex" = "minimal_codex"
+
+[tool.hatch.build]
+include = [
+    "minimal_codex/**/*.py",
+    "minimal_codex/**/*.md",
+]
+</file>
+
+<file path="minimal_codex/subagents.py">
+"""Subagent system for Minimal Codex.
+
+Provides:
+- SubagentConfig: Configuration for a subagent
+- SubagentSession: Resumable subagent session state
+- SubagentManager: Manages subagent configurations and invocation
+
+Architecture:
+- MAIN AGENT is the orchestrator
+- Subagents are workers invoked BY the main agent
+- Subagents CANNOT invoke other subagents (no nested delegation)
+"""
+
+import uuid
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+from litellm import completion
+import yaml
+
+from .prompt_templates import load_prompt_template
+
+
+@dataclass
+class SubagentConfig:
+    """Configuration for a subagent."""
+    name: str
+    description: str
+    tools: Optional[list[str]]  # None = all tools
+    model: str  # "inherit" or specific model name
+    system_prompt: str
+
+
+@dataclass
+class SubagentSession:
+    """Resumable subagent session state."""
+    agent_id: str
+    name: str
+    messages: list[dict]
+
+    def save(self, transcripts_dir: Path):
+        """Save session to transcript file."""
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        path = transcripts_dir / f"agent-{self.agent_id}.jsonl"
+        with open(path, "w", encoding="utf-8") as f:
+            for msg in self.messages:
+                f.write(json.dumps(msg) + "\n")
+
+    @classmethod
+    def load(cls, agent_id: str, transcripts_dir: Path) -> Optional["SubagentSession"]:
+        """Load session from transcript file."""
+        path = transcripts_dir / f"agent-{agent_id}.jsonl"
+        if not path.exists():
+            return None
+        messages = []
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    messages.append(json.loads(line))
+        return cls(agent_id=agent_id, name="", messages=messages)
+
+
+def get_builtin_subagents() -> dict[str, SubagentConfig]:
+    """Get built-in subagent configurations.
+
+    All prompts are loaded from prompts/subagent/ folder to ensure:
+    - Subagent framing ("You are a SUBAGENT, return quickly")
+    - Early stopping instructions
+    - Context awareness
+    """
+    return {
+        "general-purpose": SubagentConfig(
+            name="general-purpose",
+            description="General-purpose agent for complex multi-step tasks, code search, and research",
+            tools=None,  # All tools
+            model="inherit",
+            system_prompt=load_prompt_template("subagent/general_purpose"),
+        ),
+        "Plan": SubagentConfig(
+            name="Plan",
+            description="Read-only exploration for creating implementation plans",
+            tools=["read_file", "list_dir", "grep_files", "shell_command"],  # Read-only tools only
+            model="inherit",
+            system_prompt=load_prompt_template("subagent/plan"),
+        ),
+        "Explore": SubagentConfig(
+            name="Explore",
+            description="Fast codebase exploration - find files, search code, answer questions",
+            tools=["read_file", "list_dir", "grep_files"],
+            model="inherit",
+            system_prompt=load_prompt_template("subagent/explore"),
+        ),
+    }
+
+
+# Lazy-loaded to ensure prompt_templates is available
+_BUILTIN_SUBAGENTS: Optional[dict[str, SubagentConfig]] = None
+
+
+def get_builtin_subagent_configs() -> dict[str, SubagentConfig]:
+    """Get or initialize built-in subagent configs."""
+    global _BUILTIN_SUBAGENTS
+    if _BUILTIN_SUBAGENTS is None:
+        _BUILTIN_SUBAGENTS = get_builtin_subagents()
+    return _BUILTIN_SUBAGENTS
+
+
+class SubagentManager:
+    """Manages subagent configurations and invocation.
+
+    The SubagentManager is used by the MAIN AGENT to:
+    - Load built-in and custom subagent configurations
+    - Invoke subagents for specialized tasks
+    - Handle parallel subagent execution
+    - Manage resumable sessions
+
+    IMPORTANT: Subagents CANNOT invoke other subagents.
+    The invoke_subagent tool is removed from subagent tool lists.
+    """
+
+    MAX_CONCURRENT = 10  # Max parallel subagents
+
+    def __init__(self, cwd: Path, model: str, all_tools: list):
+        """Initialize the SubagentManager.
+
+        Args:
+            cwd: Current working directory
+            model: Model name to use for subagents with "inherit"
+            all_tools: List of all tool definitions
+        """
+        self.cwd = cwd
+        self.model = model
+        self.all_tools = all_tools
+        self.configs: dict[str, SubagentConfig] = {}
+        self.transcripts_dir = cwd / ".tessa" / "transcripts"
+
+        # Load built-in subagents
+        self.configs.update(get_builtin_subagent_configs())
+
+        # Load custom subagents from .tessa/agents/
+        self._load_custom_subagents()
+
+    def _load_custom_subagents(self):
+        """Load subagent configs from .tessa/agents/*.md"""
+        agents_dir = self.cwd / ".tessa" / "agents"
+        if not agents_dir.exists():
+            return
+
+        for md_file in agents_dir.glob("*.md"):
+            config = self._parse_subagent_file(md_file)
+            if config:
+                self.configs[config.name] = config
+
+    def _parse_subagent_file(self, path: Path) -> Optional[SubagentConfig]:
+        """Parse a subagent markdown file with YAML frontmatter."""
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+        # Split frontmatter and body
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                try:
+                    frontmatter = yaml.safe_load(parts[1])
+                except yaml.YAMLError:
+                    return None
+
+                system_prompt = parts[2].strip()
+
+                return SubagentConfig(
+                    name=frontmatter.get("name", path.stem),
+                    description=frontmatter.get("description", ""),
+                    tools=self._parse_tools(frontmatter.get("tools")),
+                    model=frontmatter.get("model", "inherit"),
+                    system_prompt=system_prompt,
+                )
+        return None
+
+    def _parse_tools(self, tools_str: Optional[str]) -> Optional[list[str]]:
+        """Parse tools string (comma-separated or None for all)."""
+        if tools_str is None:
+            return None
+        if isinstance(tools_str, list):
+            return tools_str
+        return [t.strip() for t in tools_str.split(",")]
+
+    def get_available_subagents(self) -> list[dict]:
+        """Get list of available subagents for the tool description."""
+        return [
+            {"name": c.name, "description": c.description}
+            for c in self.configs.values()
+        ]
+
+    def invoke(
+        self,
+        name: str,
+        task: str,
+        max_turns: int = 10,
+        resume_id: Optional[str] = None,
+        context: Optional[str] = None,
+    ) -> tuple[str, str, "SubagentSession"]:
+        """Invoke a subagent by name.
+
+        Args:
+            name: Subagent name
+            task: Task description
+            max_turns: Max turns before returning (subagent should stop earlier when done)
+            resume_id: Optional agent_id to resume previous session
+            context: Optional context/findings from main agent to share
+
+        Returns:
+            (result, agent_id, session) - Result text, agent_id, and full session for trajectory
+        """
+        if name not in self.configs:
+            available = list(self.configs.keys())
+            return f"Error: Unknown subagent '{name}'. Available: {available}", "", None
+
+        config = self.configs[name]
+
+        # Resolve model
+        model = self.model if config.model == "inherit" else config.model
+
+        # Resolve tools - IMPORTANT: Remove invoke_subagent to prevent nesting
+        tools = self._get_tools_for_subagent(config.tools, exclude_subagent=True)
+
+        # Build task with context prefix if provided
+        full_task = task
+        if context:
+            full_task = f"""## Context from Main Agent
+{context}
+
+## Your Task
+{task}"""
+
+        # Load or create session
+        agent_id = resume_id or str(uuid.uuid4())[:8]
+        session = None
+        if resume_id:
+            session = SubagentSession.load(resume_id, self.transcripts_dir)
+
+        # Run subagent loop
+        result, final_session = self._run_subagent(
+            config, full_task, model, tools, max_turns, session, agent_id
+        )
+
+        # Save session for potential resumption
+        final_session.save(self.transcripts_dir)
+
+        return result, agent_id, final_session
+
+    def _get_tools_for_subagent(
+        self,
+        tool_names: Optional[list[str]],
+        exclude_subagent: bool = True,
+    ) -> list:
+        """Get tool definitions for subagent.
+
+        Args:
+            tool_names: List of tool names to include (None = all)
+            exclude_subagent: Remove invoke_subagent to prevent nesting
+
+        Returns:
+            List of tool definitions
+        """
+        tools = self.all_tools.copy()
+
+        if tool_names is not None:
+            # Filter to requested tools
+            tools = [t for t in tools if t["function"]["name"] in tool_names]
+
+        if exclude_subagent:
+            # Remove invoke_subagent to prevent nesting
+            tools = [t for t in tools if t["function"]["name"] != "invoke_subagent"]
+
+        return tools
+
+    def _serialize_assistant_message(self, message) -> dict:
+        """Serialize assistant message following Codex's exact Chat Completions format.
+
+        This matches codex-rs/codex-api/src/requests/chat.rs exactly:
+        - "type": "function" MUST be explicitly set in tool_calls
+        - "content": null MUST be explicit (not omitted) when there are tool calls
+        - Arguments kept as strings (already JSON-encoded)
+
+        Args:
+            message: LiteLLM message object with content and optional tool_calls
+
+        Returns:
+            Dict suitable for Chat Completions API
+        """
+        if not message.tool_calls:
+            # Simple text message
+            return {
+                "role": "assistant",
+                "content": message.content,
+            }
+
+        # Message with tool calls - Codex pattern from chat.rs lines 201-224
+        return {
+            "role": "assistant",
+            "content": None,  # Codex explicitly sets null, not missing
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",  # REQUIRED - Codex always sets this explicitly
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        }
+
+    def _run_subagent(
+        self,
+        config: SubagentConfig,
+        task: str,
+        model: str,
+        tools: list,
+        max_turns: int,
+        session: Optional[SubagentSession],
+        agent_id: str,
+    ) -> tuple[str, SubagentSession]:
+        """Execute subagent loop and return findings.
+
+        Args:
+            config: Subagent configuration
+            task: Task description
+            model: Model to use
+            tools: Tool definitions
+            max_turns: Max turns
+            session: Optional existing session to resume
+            agent_id: Agent ID for this session
+
+        Returns:
+            (result, session) - Result text and final session state
+        """
+
+        # Initialize or resume messages
+        if session and session.messages:
+            messages = session.messages.copy()
+            # Add new task as continuation
+            messages.append({"role": "user", "content": f"[Continuation] {task}"})
+        else:
+            messages = [
+                {"role": "system", "content": config.system_prompt},
+                {"role": "user", "content": task},
+            ]
+
+        for _ in range(max_turns):
+            try:
+                response = completion(
+                    model=model,
+                    messages=messages,
+                    tools=tools if tools else None,
+                    tool_choice="auto" if tools else None,
+                )
+            except Exception as e:
+                return f"Error calling LLM: {str(e)}", SubagentSession(agent_id, config.name, messages)
+
+            message = response.choices[0].message
+            # Use explicit serialization per Codex pattern (includes "type": "function")
+            messages.append(self._serialize_assistant_message(message))
+
+            # If no tool calls, subagent is done
+            if not message.tool_calls:
+                result = message.content or "(No response)"
+                return result, SubagentSession(agent_id, config.name, messages)
+
+            # Execute tools
+            for tc in message.tool_calls:
+                tool_result = self._execute_tool(tc)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result,
+                })
+
+        # Max turns reached
+        return "(Max turns reached)", SubagentSession(agent_id, config.name, messages)
+
+    def _execute_tool(self, tool_call) -> str:
+        """Execute a tool call for subagent.
+
+        Delegates to tool implementations in tools.py.
+        """
+        from .tools import execute_tool
+        try:
+            args = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError:
+            return f"Error: Invalid JSON in tool arguments"
+
+        return execute_tool(
+            tool_call.function.name,
+            args,
+            self.cwd
+        )
+</file>
+
+<file path="minimal_codex/agent.py">
+"""Main agent class for the Minimal Codex Agent.
+
+Implements the core agent loop matching Codex CLI's logic:
+- API calls with retry and backoff
+- Tool execution (parallel/sequential)
+- Trajectory recording for ATIF format
+- Conversation management
+- Feature flags (PTY shell, streaming, web search)
+"""
+
+import argparse
+import json
+import os
+import random
+import sys
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import litellm
+from litellm import completion
+
+from .apply_patch import apply_patch
+from .context import build_initial_messages
+from .features import Features, Feature
+from .plan_manager import PlanManager
+from .prompts import get_system_prompt
+from .streaming import StreamController, stream_response
+from .subagents import SubagentManager
+from .pty_shell import PtySessionManager, HAS_PTY
+from .tools import (
+    CORE_TOOLS,
+    PARALLEL_TOOLS,
+    WEB_SEARCH_TOOL,
+    EXEC_COMMAND_TOOL,
+    WRITE_STDIN_TOOL,
+    SAVE_PLAN_TOOL,
+    create_invoke_subagent_tool,
+    execute_shell,
+    execute_web_search,
+    read_file,
+    list_dir,
+    grep_files,
+    update_plan,
+    truncate_output,
+    HAS_WEB_SEARCH,
+)
+
+# LiteLLM configuration - important for compatibility with various APIs
+litellm.drop_params = True
+
+# ============================================================================
+# Context Compaction Constants (from Codex's compact.rs and truncate.rs)
+# ============================================================================
+
+# Exact constant from Codex's truncate.rs
+APPROX_BYTES_PER_TOKEN = 4
+COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
+COMPACT_USER_MESSAGE_MAX_BYTES = COMPACT_USER_MESSAGE_MAX_TOKENS * APPROX_BYTES_PER_TOKEN  # 80,000
+
+# Exact prompt from compact/prompt.md
+COMPACT_PROMPT = """You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+
+Include:
+- Current progress and key decisions made
+- Important context, constraints, or user preferences
+- What remains to be done (clear next steps)
+- Any critical data, examples, or references needed to continue
+
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work."""
+
+# Exact prefix from compact/summary_prefix.md
+SUMMARY_PREFIX = """Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:"""
+
+
+# ============================================================================
+# Context Compaction Functions (from Codex's compact.rs)
+# ============================================================================
+
+def approx_token_count(text: str) -> int:
+    """Approximate token count (exact Codex formula from truncate.rs)."""
+    byte_len = len(text.encode('utf-8'))
+    return (byte_len + APPROX_BYTES_PER_TOKEN - 1) // APPROX_BYTES_PER_TOKEN
+
+
+def collect_user_messages(
+    messages: list[dict],
+    max_bytes: int = COMPACT_USER_MESSAGE_MAX_BYTES
+) -> str:
+    """Extract user messages from history up to max_bytes.
+
+    This matches Codex's collect_user_messages() exactly:
+    - Iterates through messages in order
+    - Concatenates user message content
+    - Stops when byte limit is reached
+    """
+    result = []
+    total_bytes = 0
+
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            # Handle multi-part messages (text + images)
+            content = " ".join(
+                part.get("text", "") for part in content
+                if part.get("type") == "text"
+            )
+
+        content_bytes = len(content.encode('utf-8'))
+
+        if total_bytes + content_bytes > max_bytes:
+            # Truncate to fit
+            remaining = max_bytes - total_bytes
+            if remaining > 0:
+                # Simple byte truncation (Codex does UTF-8 safe truncation)
+                truncated = content.encode('utf-8')[:remaining].decode('utf-8', errors='ignore')
+                result.append(truncated)
+            break
+
+        result.append(content)
+        total_bytes += content_bytes
+
+    return "\n\n".join(result)
+
+
+def build_compacted_history(
+    original_messages: list[dict],
+    summary: str
+) -> list[dict]:
+    """Build new conversation history with summary.
+
+    Matches Codex's build_compacted_history():
+    - Keep system message(s) at the start
+    - Add summary as a user message with prefix
+    - Include preserved user messages
+    """
+    compacted = []
+
+    # 1. Keep system messages at start
+    for msg in original_messages:
+        if msg.get("role") == "system":
+            compacted.append(msg)
+        else:
+            break  # Stop at first non-system message
+
+    # 2. Add summary with prefix
+    summary_message = {
+        "role": "user",
+        "content": f"{SUMMARY_PREFIX}\n\n{summary}"
+    }
+    compacted.append(summary_message)
+
+    # 3. Collect user messages up to limit
+    user_content = collect_user_messages(original_messages, COMPACT_USER_MESSAGE_MAX_BYTES)
+    if user_content:
+        compacted.append({
+            "role": "user",
+            "content": f"[Preserved user context]\n{user_content}"
+        })
+
+    return compacted
+
+
+class CodexAgent:
+    """Minimal Codex Agent - 1:1 replica of Codex CLI's autonomous logic."""
+
+    def __init__(
+        self,
+        model: str,
+        cwd: str = ".",
+        context_window: int = 128000,
+        features: Optional[Features] = None,
+    ):
+        """Initialize the agent.
+
+        Args:
+            model: Model name to use (passed to LiteLLM)
+            cwd: Working directory for the agent
+            context_window: Model's context window size (for compaction threshold)
+            features: Feature flags (all enabled by default)
+        """
+        self.model = model
+        self.cwd = Path(cwd).resolve()
+        self.messages = []
+        self.trajectory = []  # Internal format for ATIF conversion
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cached_tokens = 0
+        self.total_cost = 0.0
+        self.plan = []  # Current plan state
+
+        # Feature flags (all enabled by default)
+        self.features = features or Features()
+
+        # PTY session manager (if PTY feature enabled and available)
+        self.pty_manager: Optional[PtySessionManager] = None
+        if self.features.enabled(Feature.PTY_SHELL) and HAS_PTY:
+            self.pty_manager = PtySessionManager()
+
+        # Context compaction thresholds (from Codex config)
+        self.context_window = context_window
+        self.compaction_threshold = 0.8  # Compact at 80% of context
+        self.last_compaction_tokens = 0
+
+        # Subagent manager (if SUBAGENTS feature enabled)
+        self.subagent_manager: Optional[SubagentManager] = None
+        if self.features.enabled(Feature.SUBAGENTS):
+            self.subagent_manager = SubagentManager(
+                cwd=self.cwd,
+                model=self.model,
+                all_tools=self._get_base_tools(),
+            )
+
+        # Plan manager (if PLAN_MODE feature enabled)
+        self.plan_manager: Optional[PlanManager] = None
+        self.current_plan_path: Optional[Path] = None
+        self.current_task: str = ""  # Track current task for save_plan
+        self.trajectory_output_dir: Optional[Path] = None  # Set by run() for subagent trajectories
+        if self.features.enabled(Feature.PLAN_MODE):
+            self.plan_manager = PlanManager(self.cwd)
+
+    def _get_base_tools(self) -> list:
+        """Get base tools without subagent invocation.
+
+        Used to initialize SubagentManager (subagents get these tools
+        but NOT invoke_subagent to prevent nested delegation).
+        """
+        tools = CORE_TOOLS.copy()
+
+        # Add web search if enabled and available
+        if self.features.enabled(Feature.WEB_SEARCH) and HAS_WEB_SEARCH:
+            tools.append(WEB_SEARCH_TOOL)
+
+        # Add PTY tools if enabled and available
+        if self.features.enabled(Feature.PTY_SHELL) and HAS_PTY:
+            tools.append(EXEC_COMMAND_TOOL)
+            tools.append(WRITE_STDIN_TOOL)
+
+        return tools
+
+    def _get_tools(self) -> list:
+        """Get the full list of tools including invoke_subagent."""
+        tools = self._get_base_tools()
+
+        # Add invoke_subagent if subagents enabled
+        if self.subagent_manager:
+            invoke_tool = create_invoke_subagent_tool(
+                self.subagent_manager.get_available_subagents()
+            )
+            tools.append(invoke_tool)
+
+        return tools
+
+    def run(self, task: str, max_turns: int = 100, use_plan_mode: bool = False,
+            trajectory_path: Optional[str] = None) -> dict:
+        """Run the agent until task completion.
+
+        Args:
+            task: The task to perform
+            max_turns: Maximum number of turns before stopping
+            use_plan_mode: If True and PLAN_MODE enabled, use autonomous planning
+            trajectory_path: Path where main trajectory will be saved (for subagent trajectories)
+
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        # Track current task for save_plan
+        self.current_task = task
+        self.trajectory_output_dir = Path(trajectory_path).parent if trajectory_path else None
+
+        # Check if plan mode should be used
+        if use_plan_mode and self.features.enabled(Feature.PLAN_MODE) and self.subagent_manager:
+            return self._run_with_plan_mode(task, max_turns)
+
+        # Standard execution
+        return self._run_standard(task, max_turns)
+
+    def _run_standard(self, task: str, max_turns: int = 100) -> dict:
+        """Run standard agent loop without plan mode.
+
+        Args:
+            task: The task to perform
+            max_turns: Maximum number of turns before stopping
+
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        # Initialize conversation with context
+        self.messages = build_initial_messages(self.cwd, task)
+
+        # Record initial messages to trajectory
+        for msg in self.messages:
+            self._record_message(msg["role"], msg["content"])
+
+        for turn in range(max_turns):
+            # Check for compaction before API call (from Codex's compact.rs)
+            if self.compact_conversation():
+                print(f"[Compacted context at turn {turn}]")
+
+            try:
+                response = self._call_api_with_retry()
+            except Exception as e:
+                return {
+                    "error": str(e),
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+
+            assistant_message = response.choices[0].message
+
+            # Track token usage
+            usage = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                    "cached_tokens": getattr(response.usage, 'cached_tokens', 0) if hasattr(response.usage, 'cached_tokens') else 0,
+                }
+                self.total_input_tokens += usage.get("prompt_tokens", 0)
+                self.total_output_tokens += usage.get("completion_tokens", 0)
+                self.total_cached_tokens += usage.get("cached_tokens", 0)
+
+            # Add to conversation history (use explicit serialization per Codex pattern)
+            self.messages.append(self._serialize_assistant_message(assistant_message))
+
+            # Record to trajectory
+            self._record_assistant(assistant_message, usage)
+
+            # Check if done (no tool calls)
+            if not assistant_message.tool_calls:
+                return {
+                    "output": assistant_message.content,
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "cached_tokens": self.total_cached_tokens,
+                    "usage": {
+                        "input_tokens": self.total_input_tokens,
+                        "cached_input_tokens": self.total_cached_tokens,
+                        "output_tokens": self.total_output_tokens,
+                    }
+                }
+
+            # Execute tool calls
+            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+
+            # Add results to conversation and trajectory
+            for result in tool_results:
+                self.messages.append(result)
+                self._record_tool_result(result["tool_call_id"], result["content"])
+
+        return {
+            "error": "Max turns exceeded",
+            "trajectory": self.trajectory,
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+        }
+
+    def _run_with_plan_mode(self, task: str, max_turns: int) -> dict:
+        """Plan mode - just adds read-only planning prompt to system message.
+
+        Following Claude Code's pattern: plan mode is just a prompt, not phases.
+        The main agent decides when/if to use subagents.
+
+        Args:
+            task: The task to perform
+            max_turns: Maximum turns
+
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        from .prompt_templates import load_prompt_template
+
+        print("[Plan Mode] Adding planning guidance to system prompt")
+
+        # Initialize conversation with context
+        self.messages = build_initial_messages(self.cwd, task)
+
+        # Load planning guidance prompt and add to system message
+        planning_guidance = load_prompt_template("plan_mode_main")
+        self.messages[0]["content"] += "\n\n" + planning_guidance
+
+        # Record initial messages to trajectory
+        for msg in self.messages:
+            self._record_message(msg["role"], msg["content"])
+
+        # Run standard loop - main agent makes all decisions
+        return self._run_standard_loop(max_turns)
+
+    def _run_standard_loop(self, max_turns: int) -> dict:
+        """Run the standard agent loop (shared by both modes).
+
+        Args:
+            max_turns: Maximum number of turns
+
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        for turn in range(max_turns):
+            # Check for compaction before API call
+            if self.compact_conversation():
+                print(f"[Compacted context at turn {turn}]")
+
+            try:
+                response = self._call_api_with_retry()
+            except Exception as e:
+                return {
+                    "error": str(e),
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+
+            assistant_message = response.choices[0].message
+
+            # Track token usage
+            usage = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                    "cached_tokens": getattr(response.usage, 'cached_tokens', 0) if hasattr(response.usage, 'cached_tokens') else 0,
+                }
+                self.total_input_tokens += usage.get("prompt_tokens", 0)
+                self.total_output_tokens += usage.get("completion_tokens", 0)
+                self.total_cached_tokens += usage.get("cached_tokens", 0)
+
+            # Add to conversation history
+            self.messages.append(self._serialize_assistant_message(assistant_message))
+
+            # Record to trajectory
+            self._record_assistant(assistant_message, usage)
+
+            # Check if done (no tool calls)
+            if not assistant_message.tool_calls:
+                return {
+                    "output": assistant_message.content,
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "cached_tokens": self.total_cached_tokens,
+                    "usage": {
+                        "input_tokens": self.total_input_tokens,
+                        "cached_input_tokens": self.total_cached_tokens,
+                        "output_tokens": self.total_output_tokens,
+                    }
+                }
+
+            # Execute tool calls
+            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+
+            # Add results to conversation and trajectory
+            for result in tool_results:
+                self.messages.append(result)
+                self._record_tool_result(result["tool_call_id"], result["content"])
+
+        return {
+            "error": "Max turns exceeded",
+            "trajectory": self.trajectory,
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+        }
+
+    def _save_subagent_trajectories(self, sessions: list) -> list[str]:
+        """Save subagent sessions to trajectory files in ATIF format.
+
+        Saves next to the main trajectory.json file with names like:
+        - trajectory_explore_1.json
+        - trajectory_plan_1.json
+
+        Args:
+            sessions: List of (type, index, agent_id, session) tuples
+
+        Returns:
+            List of trajectory file paths
+        """
+        trajectory_files = []
+
+        # Use the same directory as main trajectory, or fall back to .tessa/trajectories
+        if self.trajectory_output_dir:
+            trajectories_dir = self.trajectory_output_dir
+        else:
+            trajectories_dir = self.cwd / ".tessa" / "trajectories"
+
+        trajectories_dir.mkdir(parents=True, exist_ok=True)
+
+        for subagent_type, index, agent_id, session in sessions:
+            # Convert session messages to ATIF format
+            atif_trajectory = convert_to_atif(
+                trajectory=session.messages,
+                model_name=self.model,
+                agent_name=f"minimal-codex-{subagent_type}",
+                agent_version="0.3.0",
+            )
+
+            # Add subagent metadata
+            atif_trajectory["subagent"] = {
+                "type": subagent_type,
+                "index": index,
+                "agent_id": agent_id,
+            }
+
+            filename = f"trajectory_{subagent_type}_{index}.json"
+            filepath = trajectories_dir / filename
+            filepath.write_text(json.dumps(atif_trajectory, indent=2, default=str), encoding="utf-8")
+            trajectory_files.append(str(filepath))
+
+        return trajectory_files
+
+    def _parse_synthesis_result(self, result: str) -> tuple[list, list]:
+        """Parse the synthesis LLM output into steps and critical files.
+
+        Args:
+            result: Raw LLM output with STEPS: and CRITICAL_FILES: sections
+
+        Returns:
+            (steps, critical_files) - List of step dicts and list of file paths
+        """
+        steps = []
+        critical_files = []
+
+        lines = result.split("\n")
+        current_section = None
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            if line_stripped.upper().startswith("STEPS:"):
+                current_section = "steps"
+                continue
+            elif line_stripped.upper().startswith("CRITICAL_FILES:"):
+                current_section = "files"
+                continue
+            elif line_stripped.upper().startswith("NOTES:"):
+                current_section = "notes"
+                continue
+
+            if current_section == "steps" and line_stripped:
+                # Parse numbered step like "1. Do something"
+                if line_stripped[0].isdigit() and "." in line_stripped:
+                    step_text = line_stripped.split(".", 1)[-1].strip()
+                    if step_text:
+                        steps.append({"step": step_text, "status": "pending"})
+                elif line_stripped.startswith("-"):
+                    step_text = line_stripped[1:].strip()
+                    if step_text:
+                        steps.append({"step": step_text, "status": "pending"})
+
+            elif current_section == "files" and line_stripped:
+                # Parse file path like "- file.py" or just "file.py"
+                if line_stripped.startswith("-"):
+                    file_path = line_stripped[1:].strip().strip("`")
+                else:
+                    file_path = line_stripped.strip("`")
+                if file_path and not file_path.upper().startswith("NOTES"):
+                    critical_files.append(file_path)
+
+        return steps, critical_files
+
+
+    def _execute_with_plan(self, task: str, max_turns: int) -> dict:
+        """Execute task with plan loaded in context.
+
+        Args:
+            task: The original task
+            max_turns: Maximum turns for execution
+
+        Returns:
+            Dict with output, trajectory, token counts, etc.
+        """
+        plan_context = self.plan_manager.get_plan_context(self.current_plan_path)
+
+        # Rebuild context with plan injected
+        self.messages = build_initial_messages(self.cwd, f"{task}\n\n{plan_context}")
+
+        # Record plan injection to trajectory
+        self._record_message("system", f"[Plan Mode] Executing with plan:\n{plan_context}")
+
+        # Run standard execution loop
+        for turn in range(max_turns):
+            # Check for compaction - re-inject plan if compacted
+            if self.compact_conversation():
+                print(f"[Compacted context at turn {turn}]")
+                self._inject_plan_on_compaction()
+
+            try:
+                response = self._call_api_with_retry()
+            except Exception as e:
+                return {
+                    "error": str(e),
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+
+            assistant_message = response.choices[0].message
+
+            # Track token usage
+            usage = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                    "cached_tokens": getattr(response.usage, 'cached_tokens', 0) if hasattr(response.usage, 'cached_tokens') else 0,
+                }
+                self.total_input_tokens += usage.get("prompt_tokens", 0)
+                self.total_output_tokens += usage.get("completion_tokens", 0)
+                self.total_cached_tokens += usage.get("cached_tokens", 0)
+
+            # Add to conversation history (use explicit serialization per Codex pattern)
+            self.messages.append(self._serialize_assistant_message(assistant_message))
+
+            # Record to trajectory
+            self._record_assistant(assistant_message, usage)
+
+            # Check if done (no tool calls)
+            if not assistant_message.tool_calls:
+                return {
+                    "output": assistant_message.content,
+                    "trajectory": self.trajectory,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "cached_tokens": self.total_cached_tokens,
+                    "usage": {
+                        "input_tokens": self.total_input_tokens,
+                        "cached_input_tokens": self.total_cached_tokens,
+                        "output_tokens": self.total_output_tokens,
+                    }
+                }
+
+            # Execute tool calls
+            tool_results = self._execute_tool_calls(assistant_message.tool_calls)
+
+            # Add results to conversation and trajectory
+            for result in tool_results:
+                self.messages.append(result)
+                self._record_tool_result(result["tool_call_id"], result["content"])
+
+        return {
+            "error": "Max turns exceeded",
+            "trajectory": self.trajectory,
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+        }
+
+    def _inject_plan_on_compaction(self):
+        """Re-inject plan after context compaction."""
+        if self.current_plan_path and self.plan_manager:
+            plan_context = self.plan_manager.get_plan_context(self.current_plan_path)
+            # Prepend plan to compacted context
+            self.messages.insert(1, {
+                "role": "user",
+                "content": f"[Plan continues from file]\n{plan_context}",
+            })
+
+    def _call_api_with_retry(self, max_retries: int = 3) -> Any:
+        """Call API with exponential backoff retry.
+
+        Supports streaming when Feature.STREAMING is enabled.
+
+        Args:
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            API response object
+        """
+        base_delay = 1.0
+        tools = self._get_tools()
+        use_streaming = self.features.enabled(Feature.STREAMING)
+
+        for attempt in range(max_retries + 1):
+            try:
+                if use_streaming:
+                    # Streaming mode: collect chunks and output to stdout
+                    response = completion(
+                        model=self.model,
+                        messages=self.messages,
+                        tools=tools,
+                        tool_choice="auto",
+                        parallel_tool_calls=True,
+                        stream=True,
+                    )
+                    return self._handle_streaming_response(response)
+                else:
+                    # Non-streaming mode
+                    response = completion(
+                        model=self.model,
+                        messages=self.messages,
+                        tools=tools,
+                        tool_choice="auto",
+                        parallel_tool_calls=True,
+                    )
+                    return response
+            except Exception as e:
+                if attempt == max_retries:
+                    raise
+
+                # Check if retryable
+                if not self._is_retryable_error(e):
+                    raise
+
+                # Exponential backoff with jitter
+                delay = base_delay * (2 ** attempt)
+                jitter = random.uniform(0.9, 1.1)
+                time.sleep(delay * jitter)
+
+        raise Exception("Max retries exceeded")
+
+    def _handle_streaming_response(self, response_stream) -> Any:
+        """Handle streaming response, outputting tokens as they arrive.
+
+        Returns a synthetic response object matching non-streaming format.
+        """
+        controller = StreamController()
+        full_content = ""
+        tool_calls_data = {}  # Accumulate tool call chunks
+        usage_data = {}
+
+        for chunk in response_stream:
+            if not hasattr(chunk, 'choices') or not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            # Handle content streaming
+            if hasattr(delta, 'content') and delta.content:
+                full_content += delta.content
+                controller.push(delta.content)
+
+            # Handle tool calls streaming
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in tool_calls_data:
+                        tool_calls_data[idx] = {
+                            "id": "",
+                            "function": {"name": "", "arguments": ""}
+                        }
+                    if tc.id:
+                        tool_calls_data[idx]["id"] = tc.id
+                    if hasattr(tc, 'function') and tc.function:
+                        if tc.function.name:
+                            tool_calls_data[idx]["function"]["name"] = tc.function.name
+                        if tc.function.arguments:
+                            tool_calls_data[idx]["function"]["arguments"] += tc.function.arguments
+
+            # Capture usage from final chunk
+            if hasattr(chunk, 'usage') and chunk.usage:
+                usage_data = {
+                    "prompt_tokens": getattr(chunk.usage, 'prompt_tokens', 0),
+                    "completion_tokens": getattr(chunk.usage, 'completion_tokens', 0),
+                }
+
+        # Finalize streaming output
+        controller.finalize()
+
+        # Build synthetic response matching non-streaming format
+        from types import SimpleNamespace
+
+        tool_calls = None
+        if tool_calls_data:
+            tool_calls = []
+            for idx in sorted(tool_calls_data.keys()):
+                tc_data = tool_calls_data[idx]
+                tool_calls.append(SimpleNamespace(
+                    id=tc_data["id"],
+                    function=SimpleNamespace(
+                        name=tc_data["function"]["name"],
+                        arguments=tc_data["function"]["arguments"]
+                    )
+                ))
+
+        message = SimpleNamespace(
+            content=full_content if full_content else None,
+            tool_calls=tool_calls if tool_calls else None,
+            # Note: model_dump is kept for compatibility but _serialize_assistant_message is used
+            model_dump=lambda: {
+                "role": "assistant",
+                "content": None if tool_calls else (full_content if full_content else None),
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",  # REQUIRED per Codex pattern
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    }
+                    for tc in (tool_calls or [])
+                ] if tool_calls else None
+            }
+        )
+
+        usage = SimpleNamespace(**usage_data) if usage_data else None
+
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message)],
+            usage=usage
+        )
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Check if error should trigger retry."""
+        error_str = str(error).lower()
+        return any(x in error_str for x in ['429', '500', '502', '503', 'timeout', 'connection'])
+
+    def _serialize_assistant_message(self, message) -> dict:
+        """Serialize assistant message following Codex's exact Chat Completions format.
+
+        This matches codex-rs/codex-api/src/requests/chat.rs exactly:
+        - "type": "function" MUST be explicitly set in tool_calls
+        - "content": null MUST be explicit (not omitted) when there are tool calls
+        - Arguments kept as strings (already JSON-encoded)
+
+        Args:
+            message: LiteLLM message object with content and optional tool_calls
+
+        Returns:
+            Dict suitable for Chat Completions API
+        """
+        if not message.tool_calls:
+            # Simple text message
+            return {
+                "role": "assistant",
+                "content": message.content,
+            }
+
+        # Message with tool calls - Codex pattern from chat.rs lines 201-224
+        return {
+            "role": "assistant",
+            "content": None,  # Codex explicitly sets null, not missing
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",  # REQUIRED - Codex always sets this explicitly
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        }
+
+    # ========================================================================
+    # Context Compaction Methods (from Codex's compact.rs)
+    # ========================================================================
+
+    def should_compact(self) -> bool:
+        """Check if compaction is needed."""
+        current_tokens = self._estimate_context_tokens()
+        threshold_tokens = int(self.context_window * self.compaction_threshold)
+
+        # Only compact if significantly over threshold
+        # and we haven't just compacted
+        return (current_tokens > threshold_tokens and
+                current_tokens - self.last_compaction_tokens > 10000)
+
+    def _estimate_context_tokens(self) -> int:
+        """Estimate total tokens in conversation."""
+        total = 0
+        for msg in self.messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total += approx_token_count(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if part.get("type") == "text":
+                        total += approx_token_count(part.get("text", ""))
+        return total
+
+    def compact_conversation(self) -> bool:
+        """Perform context compaction using LLM summarization.
+
+        Returns True if compaction was performed.
+        """
+        if not self.should_compact():
+            return False
+
+        # Build prompt for summarization
+        history_text = self._format_history_for_summary()
+
+        summary_messages = [
+            {"role": "system", "content": COMPACT_PROMPT},
+            {"role": "user", "content": history_text}
+        ]
+
+        try:
+            # Call model for summarization
+            response = completion(
+                model=self.model,
+                messages=summary_messages,
+                max_tokens=4000,  # Allow substantial summary
+            )
+            summary = response.choices[0].message.content
+
+            # Track tokens used for summary
+            if hasattr(response, 'usage') and response.usage:
+                self.total_input_tokens += getattr(response.usage, 'prompt_tokens', 0)
+                self.total_output_tokens += getattr(response.usage, 'completion_tokens', 0)
+
+            # Build new compacted history
+            self.messages = build_compacted_history(self.messages, summary)
+            self.last_compaction_tokens = self._estimate_context_tokens()
+
+            return True
+
+        except Exception as e:
+            # Log error but don't fail - just continue with full history
+            print(f"Warning: Compaction failed: {e}")
+            return False
+
+    def _format_history_for_summary(self) -> str:
+        """Format conversation history for summarization."""
+        parts = []
+        for i, msg in enumerate(self.messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+
+            if isinstance(content, list):
+                content = " ".join(
+                    part.get("text", "[non-text content]")
+                    for part in content
+                )
+
+            # Truncate very long messages for summary
+            if len(content) > 5000:
+                content = content[:2000] + f"\n...[{len(content)-4000} chars truncated]...\n" + content[-2000:]
+
+            parts.append(f"[{role.upper()} {i+1}]\n{content}")
+
+        return "\n\n---\n\n".join(parts)
+
+    def _execute_tool_calls(self, tool_calls: list) -> list[dict]:
+        """Execute tool calls, parallelizing where supported.
+
+        Args:
+            tool_calls: List of tool call objects from the API
+
+        Returns:
+            List of tool result dicts
+        """
+        results = []
+
+        # Separate parallel vs sequential tools
+        parallel_calls = []
+        sequential_calls = []
+
+        for tc in tool_calls:
+            if tc.function.name in PARALLEL_TOOLS:
+                parallel_calls.append(tc)
+            else:
+                sequential_calls.append(tc)
+
+        # Execute sequential tools first (shell, apply_patch need exclusive access)
+        for tc in sequential_calls:
+            result = self._execute_single_tool(tc)
+            results.append(result)
+
+        # Execute parallel tools concurrently
+        if parallel_calls:
+            with ThreadPoolExecutor(max_workers=len(parallel_calls)) as executor:
+                futures = [executor.submit(self._execute_single_tool, tc) for tc in parallel_calls]
+                for f in futures:
+                    results.append(f.result())
+
+        return results
+
+    def _execute_single_tool(self, tool_call) -> dict:
+        """Execute a single tool call and return result.
+
+        Args:
+            tool_call: Tool call object from API
+
+        Returns:
+            Dict with role, tool_call_id, content
+        """
+        name = tool_call.function.name
+        try:
+            args = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError as e:
+            output = f"Error: Invalid JSON arguments: {e}"
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": truncate_output(output)
+            }
+
+        try:
+            if name == "shell_command":
+                output = execute_shell(args, self.cwd)
+            elif name == "apply_patch":
+                output = apply_patch(args.get("patch", ""), self.cwd)
+            elif name == "update_plan":
+                output, self.plan = update_plan(args, self.plan)
+            elif name == "read_file":
+                output = read_file(args, self.cwd)
+            elif name == "list_dir":
+                output = list_dir(args, self.cwd)
+            elif name == "grep_files":
+                output = grep_files(args, self.cwd)
+            elif name == "web_search":
+                output = execute_web_search(args)
+            elif name == "exec_command":
+                output = self._execute_pty_command(args)
+            elif name == "write_stdin":
+                output = self._execute_write_stdin(args)
+            elif name == "invoke_subagent":
+                output = self._execute_invoke_subagent(args)
+            elif name == "save_plan":
+                output = self._execute_save_plan(args)
+            else:
+                output = f"Unknown tool: {name}"
+        except Exception as e:
+            output = f"Error: {str(e)}"
+
+        # Truncate if too large
+        output = truncate_output(output)
+
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": output
+        }
+
+    def _execute_pty_command(self, args: dict) -> str:
+        """Execute a command in a PTY session.
+
+        Matches Codex's exec_command tool.
+        """
+        if not self.pty_manager:
+            return "Error: PTY shell not available. Install pexpect (Unix) or pywinpty (Windows)."
+
+        command = args.get("command", [])
+        if isinstance(command, str):
+            command = [command]
+
+        workdir = args.get("workdir")
+        cwd = Path(workdir).resolve() if workdir else self.cwd
+        yield_time_ms = args.get("yield_time_ms", 2500)
+
+        output, _, process_id, exit_code = self.pty_manager.exec_command(
+            command=command,
+            cwd=cwd,
+            yield_time_ms=yield_time_ms,
+        )
+
+        # Format output with process info
+        result_parts = [output] if output else []
+
+        if process_id:
+            result_parts.append(f"\n[process_id: {process_id}]")
+            result_parts.append("[Process still running - use write_stdin to interact]")
+        elif exit_code is not None:
+            result_parts.append(f"\n[exit_code: {exit_code}]")
+
+        return "\n".join(result_parts) if result_parts else "(no output)"
+
+    def _execute_write_stdin(self, args: dict) -> str:
+        """Write input to a running PTY session.
+
+        Matches Codex's write_stdin tool.
+        """
+        if not self.pty_manager:
+            return "Error: PTY shell not available."
+
+        process_id = args.get("process_id", "")
+        input_data = args.get("input", "")
+        yield_time_ms = args.get("yield_time_ms", 2500)
+
+        output, alive_process_id, exit_code = self.pty_manager.write_stdin(
+            process_id=process_id,
+            input_data=input_data,
+            yield_time_ms=yield_time_ms,
+        )
+
+        # Format output with process info
+        result_parts = [output] if output else []
+
+        if alive_process_id:
+            result_parts.append(f"\n[process_id: {alive_process_id}]")
+            result_parts.append("[Process still running]")
+        elif exit_code is not None:
+            result_parts.append(f"\n[exit_code: {exit_code}]")
+            result_parts.append("[Process exited]")
+
+        return "\n".join(result_parts) if result_parts else "(no output)"
+
+    def _execute_invoke_subagent(self, args: dict) -> str:
+        """Invoke a subagent to handle a specialized task.
+
+        Args:
+            args: Tool arguments with name, task, optional max_turns, resume_id, context
+
+        Returns:
+            Subagent result with agent_id for potential resumption
+        """
+        if not self.subagent_manager:
+            return "Error: Subagents feature is disabled"
+
+        name = args.get("name", "")
+        task = args.get("task", "")
+        max_turns = args.get("max_turns", 10)
+        resume_id = args.get("resume_id")
+        context = args.get("context")  # Optional context from main agent
+
+        result, agent_id, session = self.subagent_manager.invoke(
+            name=name,
+            task=task,
+            max_turns=max_turns,
+            resume_id=resume_id,
+            context=context,
+        )
+
+        # Save trajectory for debugging (session is already saved by invoke)
+        if session:
+            traj_path = self.subagent_manager.transcripts_dir / f"agent-{agent_id}.jsonl"
+            print(f"[Subagent] Trajectory saved: {traj_path}")
+
+        # Include agent_id for potential resumption
+        return f"{result}\n\n[agent_id: {agent_id}]"
+
+    def _execute_save_plan(self, args: dict) -> str:
+        """Save the implementation plan.
+
+        Args:
+            args: Tool arguments with steps and critical_files
+
+        Returns:
+            Confirmation message with plan path
+        """
+        if not self.plan_manager:
+            return "Error: Plan mode is disabled"
+
+        steps = args.get("steps", [])
+        critical_files = args.get("critical_files", [])
+
+        path = self.plan_manager.create_plan(
+            task=self.current_task,
+            steps=steps,
+            critical_files=critical_files,
+        )
+
+        return f"Plan saved to: {path}"
+
+    def _record_message(self, role: str, content: str, **kwargs):
+        """Record a message with timestamp for trajectory."""
+        self.trajectory.append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **kwargs
+        })
+
+    def _record_assistant(self, message, usage: dict = None):
+        """Record assistant message with tool calls and usage."""
+        entry = {
+            "role": "assistant",
+            "content": message.content or "",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if message.tool_calls:
+            entry["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        if usage:
+            entry["usage"] = usage
+        self.trajectory.append(entry)
+
+    def _record_tool_result(self, tool_call_id: str, content: str):
+        """Record tool execution result."""
+        self.trajectory.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+
+def convert_to_atif(
+    trajectory: list[dict],
+    model_name: str,
+    agent_version: str = "0.1.0",
+    agent_name: str = "minimal-codex",
+) -> dict:
+    """Convert internal trajectory to ATIF v1.4 format for Harbor compatibility.
+
+    Args:
+        trajectory: Internal trajectory list
+        model_name: Model name used
+        agent_version: Version of this agent
+        agent_name: Name of the agent (for subagent trajectories)
+
+    Returns:
+        ATIF-formatted trajectory dict
+    """
+    steps = []
+    step_id = 1
+
+    # Aggregate metrics
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_cached_tokens = 0
+    total_cost_usd = 0.0
+
+    for entry in trajectory:
+        timestamp = entry.get("timestamp", datetime.now(timezone.utc).isoformat())
+
+        if entry["role"] == "system":
+            steps.append({
+                "step_id": step_id,
+                "timestamp": timestamp,
+                "source": "system",
+                "message": entry.get("content", ""),
+            })
+            step_id += 1
+
+        elif entry["role"] == "user":
+            steps.append({
+                "step_id": step_id,
+                "timestamp": timestamp,
+                "source": "user",
+                "message": entry.get("content", ""),
+            })
+            step_id += 1
+
+        elif entry["role"] == "assistant":
+            # Build tool_calls list
+            tool_calls_atif = None
+            if entry.get("tool_calls"):
+                tool_calls_atif = [
+                    {
+                        "tool_call_id": tc.get("id", f"call_{step_id}_{i}"),
+                        "function_name": tc.get("function", {}).get("name", ""),
+                        "arguments": json.loads(tc.get("function", {}).get("arguments", "{}")),
+                    }
+                    for i, tc in enumerate(entry.get("tool_calls", []))
+                ]
+
+            # Build metrics if available
+            usage = entry.get("usage", {})
+            metrics = None
+            if usage:
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                cached_tokens = usage.get("cached_tokens", 0)
+                cost_usd = usage.get("cost_usd")
+
+                metrics = {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                }
+                if cached_tokens > 0:
+                    metrics["cached_tokens"] = cached_tokens
+                if cost_usd:
+                    metrics["cost_usd"] = cost_usd
+
+                # Accumulate totals
+                total_prompt_tokens += prompt_tokens
+                total_completion_tokens += completion_tokens
+                total_cached_tokens += cached_tokens
+                if cost_usd:
+                    total_cost_usd += cost_usd
+
+            step = {
+                "step_id": step_id,
+                "timestamp": timestamp,
+                "source": "agent",
+                "model_name": model_name,
+                "message": entry.get("content", ""),
+            }
+            if entry.get("reasoning"):
+                step["reasoning_content"] = entry.get("reasoning")
+            if tool_calls_atif:
+                step["tool_calls"] = tool_calls_atif
+            if metrics:
+                step["metrics"] = metrics
+
+            steps.append(step)
+            step_id += 1
+
+        elif entry["role"] == "tool":
+            # Attach tool result as observation to previous agent step
+            # CRITICAL: Must link via source_call_id for proper visualization
+            if steps and steps[-1].get("source") == "agent":
+                prev_step = steps[-1]
+                if "observation" not in prev_step:
+                    prev_step["observation"] = {"results": []}
+
+                prev_step["observation"]["results"].append({
+                    "source_call_id": entry.get("tool_call_id"),
+                    "content": entry.get("content", ""),
+                })
+
+    # Build final trajectory
+    final_metrics = {
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "total_steps": len([s for s in steps if s.get("source") == "agent"]),
+    }
+    if total_cached_tokens > 0:
+        final_metrics["total_cached_tokens"] = total_cached_tokens
+    if total_cost_usd > 0:
+        final_metrics["total_cost_usd"] = total_cost_usd
+
+    return {
+        "schema_version": "ATIF-v1.4",
+        "session_id": str(uuid.uuid4()),
+        "agent": {
+            "name": agent_name,
+            "version": agent_version,
+            "model_name": model_name,
+            "extra": {"framework": "minimal-codex"}
+        },
+        "steps": steps,
+        "final_metrics": final_metrics,
+        "notes": "Generated by minimal-codex agent",
+    }
+
+
+def main():
+    """CLI entry point for the Minimal Codex Agent."""
+    parser = argparse.ArgumentParser(description="Minimal Codex Agent - autonomous coding agent")
+    parser.add_argument("--task", required=True, help="Task to execute")
+    parser.add_argument("--model", required=True, help="Model to use (via LiteLLM)")
+    parser.add_argument("--cwd", default=".", help="Working directory")
+    parser.add_argument("--output", help="Output file for results JSON")
+    parser.add_argument("--trajectory", help="Output file for ATIF trajectory")
+    parser.add_argument("--max-turns", type=int, default=100, help="Maximum turns")
+
+    # Feature flags (all enabled by default, use --no-* to disable)
+    parser.add_argument("--no-stream", action="store_true",
+                        help="Disable token streaming to stdout")
+    parser.add_argument("--no-pty", action="store_true",
+                        help="Disable PTY shell sessions (exec_command/write_stdin)")
+    parser.add_argument("--no-web-search", action="store_true",
+                        help="Disable web search tool")
+    parser.add_argument("--no-plan-mode", action="store_true",
+                        help="Disable autonomous planning workflow")
+    parser.add_argument("--no-subagents", action="store_true",
+                        help="Disable subagent invocation")
+
+    # Plan mode activation (uses autonomous planning if enabled)
+    parser.add_argument("--plan", action="store_true",
+                        help="Use autonomous planning mode (research -> plan -> execute)")
+
+    args = parser.parse_args()
+
+    # Configure features based on CLI flags
+    features = Features.from_env()  # Start with env-based config
+    if args.no_stream:
+        features.disable(Feature.STREAMING)
+    if args.no_pty:
+        features.disable(Feature.PTY_SHELL)
+    if args.no_web_search:
+        features.disable(Feature.WEB_SEARCH)
+    if args.no_plan_mode:
+        features.disable(Feature.PLAN_MODE)
+    if args.no_subagents:
+        features.disable(Feature.SUBAGENTS)
+
+    # Run the agent
+    agent = CodexAgent(model=args.model, cwd=args.cwd, features=features)
+    result = agent.run(
+        args.task,
+        max_turns=args.max_turns,
+        use_plan_mode=args.plan,
+        trajectory_path=args.trajectory,
+    )
+
+    # Build output
+    output = {
+        "output": result.get("output"),
+        "error": result.get("error"),
+        "usage": result.get("usage", {
+            "input_tokens": result.get("input_tokens", 0),
+            "cached_input_tokens": result.get("cached_tokens", 0),
+            "output_tokens": result.get("output_tokens", 0),
+        })
+    }
+
+    # Add plan mode artifacts if present
+    if result.get("plan_file"):
+        output["plan_file"] = result["plan_file"]
+        print(f"[Plan Mode] Plan file: {result['plan_file']}")
+    if result.get("subagent_trajectories"):
+        output["subagent_trajectories"] = result["subagent_trajectories"]
+        print(f"[Plan Mode] Subagent trajectories: {len(result['subagent_trajectories'])} files")
+        for traj in result["subagent_trajectories"]:
+            print(f"  - {traj}")
+
+    # Write output JSON
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps(output, indent=2))
+
+    # Write ATIF trajectory
+    if args.trajectory:
+        atif = convert_to_atif(result["trajectory"], args.model)
+        Path(args.trajectory).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.trajectory).write_text(json.dumps(atif, indent=2))
+
+    # Print output for capture
+    print(json.dumps(output))
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+</files>

@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import random
+import shutil
 import sys
 import time
 import uuid
@@ -295,6 +296,11 @@ class CodexAgent:
         self.total_cost = 0.0
         self.plan = []  # Current plan state
 
+        # Incremental save paths (set by run() from CLI args)
+        self.trajectory_output_path = None  # Path to trajectory.json in mounted volume
+        self.output_json_path = None        # Path to output.json in mounted volume
+        self.session_id = str(uuid.uuid4())  # Stable session ID for ATIF
+
         # Feature flags (all enabled by default)
         self.features = features or Features()
 
@@ -364,7 +370,7 @@ class CodexAgent:
         return tools
 
     def run(self, task: str, max_turns: Optional[int] = None, use_plan_mode: bool = False,
-            trajectory_path: Optional[str] = None) -> dict:
+            trajectory_path: Optional[str] = None, output_path: Optional[str] = None) -> dict:
         """Run the agent until task completion.
 
         Args:
@@ -372,6 +378,7 @@ class CodexAgent:
             max_turns: Maximum turns (None = unlimited, uses compaction like real Codex)
             use_plan_mode: If True and PLAN_MODE enabled, use autonomous planning
             trajectory_path: Path where main trajectory will be saved (for subagent trajectories)
+            output_path: Path where output.json will be saved
 
         Returns:
             Dict with output, trajectory, token counts, etc.
@@ -379,6 +386,10 @@ class CodexAgent:
         # Track current task for save_plan
         self.current_task = task
         self.trajectory_output_dir = Path(trajectory_path).parent if trajectory_path else None
+
+        # Set paths for incremental saving (survives timeout/crash)
+        self.trajectory_output_path = trajectory_path
+        self.output_json_path = output_path
 
         # Check if plan mode should be used
         if use_plan_mode and self.features.enabled(Feature.PLAN_MODE) and self.subagent_manager:
@@ -1332,6 +1343,15 @@ class CodexAgent:
             traj_path = self.subagent_manager.transcripts_dir / f"agent-{agent_id}.jsonl"
             print(f"[Subagent] Trajectory saved: {traj_path}")
 
+            # Mirror subagent transcript to output directory (survives timeout/crash)
+            if self.trajectory_output_path and traj_path.exists():
+                try:
+                    output_subagents_dir = Path(self.trajectory_output_path).parent / "subagents"
+                    output_subagents_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(traj_path, output_subagents_dir / traj_path.name)
+                except Exception as e:
+                    print(f"[Warning] Failed to mirror subagent transcript: {e}")
+
         # Include agent_id for potential resumption
         return f"{result}\n\n[agent_id: {agent_id}]"
 
@@ -1356,6 +1376,15 @@ class CodexAgent:
             critical_files=critical_files,
         )
 
+        # Mirror plan to output directory (survives timeout/crash)
+        if self.trajectory_output_path and path.exists():
+            try:
+                output_plans_dir = Path(self.trajectory_output_path).parent / "plans"
+                output_plans_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy(path, output_plans_dir / path.name)
+            except Exception as e:
+                print(f"[Warning] Failed to mirror plan: {e}")
+
         return f"Plan saved to: {path}"
 
     def _record_message(self, role: str, content: str, **kwargs):
@@ -1366,6 +1395,7 @@ class CodexAgent:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             **kwargs
         })
+        self._flush_trajectory_to_disk()
 
     def _record_assistant(self, message, usage: dict = None):
         """Record assistant message with tool calls and usage."""
@@ -1388,6 +1418,7 @@ class CodexAgent:
         if usage:
             entry["usage"] = usage
         self.trajectory.append(entry)
+        self._flush_trajectory_to_disk()
 
     def _record_tool_result(self, tool_call_id: str, content: str):
         """Record tool execution result."""
@@ -1397,6 +1428,73 @@ class CodexAgent:
             "content": content,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
+        self._flush_trajectory_to_disk()
+
+    # ========================================================================
+    # Incremental Trajectory Saving (survives container timeout/crash)
+    # ========================================================================
+
+    def _flush_trajectory_to_disk(self):
+        """Incrementally save trajectory to mounted output directory.
+
+        This writes the current trajectory state to disk after each step,
+        ensuring data survives container timeout or crash. The mounted
+        /logs/agent/ directory syncs to the host in real-time.
+        """
+        if not self.trajectory_output_path:
+            return
+
+        try:
+            atif = self._convert_to_atif_internal()
+            path = Path(self.trajectory_output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(atif, indent=2))
+
+            # Log first flush to confirm incremental saving is working
+            if not hasattr(self, '_first_flush_logged'):
+                self._first_flush_logged = True
+                print(f"[Trajectory] Incremental saving enabled: {path}")
+
+            # Also flush output.json with current usage stats
+            self._flush_output_to_disk()
+        except Exception as e:
+            # Don't crash the agent if flush fails - just warn
+            print(f"[Warning] Failed to flush trajectory: {e}")
+
+    def _flush_output_to_disk(self):
+        """Incrementally save output.json with current usage stats."""
+        if not self.output_json_path:
+            return
+
+        try:
+            output = {
+                "output": None,  # Not complete yet
+                "error": None,
+                "status": "running",
+                "usage": {
+                    "input_tokens": self.total_input_tokens,
+                    "cached_input_tokens": self.total_cached_tokens,
+                    "output_tokens": self.total_output_tokens,
+                }
+            }
+            path = Path(self.output_json_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(output, indent=2))
+        except Exception:
+            pass  # Silent fail for output - trajectory is more important
+
+    def _convert_to_atif_internal(self) -> dict:
+        """Convert current trajectory to ATIF format for incremental saving.
+
+        Uses the existing convert_to_atif logic but with instance attributes.
+        """
+        return convert_to_atif(
+            trajectory=self.trajectory,
+            model_name=self.model,
+            agent_name="minimal-codex",
+            agent_version="0.3.0",
+            session_id=self.session_id,
+        )
 
 
 def convert_to_atif(
@@ -1404,6 +1502,7 @@ def convert_to_atif(
     model_name: str,
     agent_version: str = "0.1.0",
     agent_name: str = "minimal-codex",
+    session_id: str = None,
 ) -> dict:
     """Convert internal trajectory to ATIF v1.4 format for Harbor compatibility.
 
@@ -1412,6 +1511,7 @@ def convert_to_atif(
         model_name: Model name used
         agent_version: Version of this agent
         agent_name: Name of the agent (for subagent trajectories)
+        session_id: Optional stable session ID (generates new one if not provided)
 
     Returns:
         ATIF-formatted trajectory dict
@@ -1527,7 +1627,7 @@ def convert_to_atif(
 
     return {
         "schema_version": "ATIF-v1.4",
-        "session_id": str(uuid.uuid4()),
+        "session_id": session_id or str(uuid.uuid4()),
         "agent": {
             "name": agent_name,
             "version": agent_version,
@@ -1589,6 +1689,7 @@ def main():
         max_turns=args.max_turns,
         use_plan_mode=args.plan,
         trajectory_path=args.trajectory,
+        output_path=args.output,
     )
 
     # Build output

@@ -5,6 +5,9 @@ Matches Codex's unified_exec module pattern:
 - Session store with LRU pruning (protects 8 most recent, max 64 sessions)
 - Output ring buffer with size limits
 - exec_command and write_stdin operations
+- Process group isolation with PDEATHSIG (Linux)
+- UTF-8 boundary-safe output chunking
+- Background exit watcher for async cleanup
 
 Platform support:
 - Unix: pexpect
@@ -15,11 +18,21 @@ import os
 import sys
 import time
 import random
+import signal
+import atexit
 import threading
+import weakref
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Callable
+
+# For process group management on Linux
+try:
+    import ctypes
+    HAS_CTYPES = True
+except ImportError:
+    HAS_CTYPES = False
 
 # Platform-specific PTY support
 IS_WINDOWS = sys.platform == "win32"
@@ -47,6 +60,16 @@ MIN_YIELD_TIME_MS = 250
 MAX_YIELD_TIME_MS = 30_000
 DEFAULT_MAX_OUTPUT_TOKENS = 10_000
 
+# UTF-8 chunking constants (from async_watcher.rs)
+OUTPUT_DELTA_MAX_BYTES = 8192  # Max bytes per output chunk
+MAX_UTF8_SEQUENCE_LEN = 4  # Longest UTF-8 sequence is 4 bytes
+
+# Exit watcher constants (from async_watcher.rs)
+TRAILING_OUTPUT_GRACE_MS = 100  # Grace period after process exit for final output
+
+# Linux prctl constants
+PR_SET_PDEATHSIG = 1  # Set parent death signal
+
 # Environment variables for PTY sessions (matches UNIFIED_EXEC_ENV)
 PTY_ENV = {
     "NO_COLOR": "1",
@@ -60,16 +83,149 @@ PTY_ENV = {
 }
 
 
+# =============================================================================
+# Process Group Setup (matches Codex spawn.rs)
+# =============================================================================
+
+def create_process_group_setup(parent_pid: int) -> Callable[[], None]:
+    """Create a preexec_fn for process group isolation.
+
+    This matches Codex's spawn.rs behavior:
+    1. setpgid(0, 0) - Create new process group
+    2. prctl(PR_SET_PDEATHSIG, SIGTERM) - Kill on parent death (Linux only)
+    3. Race condition check - If parent already died, self-terminate
+
+    Args:
+        parent_pid: PID of the parent process (captured BEFORE fork)
+
+    Returns:
+        A callable to be used as preexec_fn in pexpect.spawn()
+    """
+    def setup_process_group():
+        """Called in child process after fork, before exec."""
+        # 1. setpgid(0, 0) - Create new process group
+        # This allows us to kill the entire process group if needed
+        try:
+            os.setpgid(0, 0)
+        except OSError:
+            pass  # May fail if already process group leader
+
+        # 2. prctl(PR_SET_PDEATHSIG, SIGTERM) + race condition check - Linux only
+        # Request kernel to send SIGTERM when parent dies
+        if HAS_CTYPES and sys.platform.startswith("linux"):
+            try:
+                libc = ctypes.CDLL(None, use_errno=True)
+                result = libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+                if result == -1:
+                    # Non-critical failure, continue
+                    pass
+            except Exception:
+                pass  # prctl not available
+
+            # 3. Race condition protection (Linux only, matches Codex spawn.rs)
+            # If parent died between fork and prctl, the parent PID changes
+            # to init (1) or a subreaper. In that case, self-terminate.
+            try:
+                current_ppid = os.getppid()
+                if current_ppid != parent_pid:
+                    # Parent already exited, self-terminate to avoid orphan
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    time.sleep(0.1)  # Brief delay for signal delivery
+            except Exception:
+                pass
+
+    return setup_process_group
+
+
+# =============================================================================
+# UTF-8 Boundary-Safe Chunking (matches Codex async_watcher.rs)
+# =============================================================================
+
+def split_valid_utf8_prefix(buffer: bytearray, max_bytes: int = OUTPUT_DELTA_MAX_BYTES) -> Optional[bytes]:
+    """Extract the longest valid UTF-8 prefix from buffer.
+
+    This matches Codex's split_valid_utf8_prefix_with_max() exactly:
+    1. Try to find valid UTF-8 up to max_bytes
+    2. Back-scan up to 4 bytes to find valid boundary
+    3. If no valid UTF-8 found, emit single byte to make progress
+
+    Args:
+        buffer: Mutable bytearray to extract from (modified in-place)
+        max_bytes: Maximum bytes to extract
+
+    Returns:
+        Extracted bytes, or None if buffer is empty
+    """
+    if not buffer:
+        return None
+
+    max_len = min(len(buffer), max_bytes)
+    split = max_len
+
+    # Back-scan from max_len looking for valid UTF-8 boundary
+    while split > 0:
+        try:
+            # Try to decode as UTF-8
+            buffer[:split].decode("utf-8")
+            # Valid UTF-8 found - extract and remove from buffer
+            prefix = bytes(buffer[:split])
+            del buffer[:split]
+            return prefix
+        except UnicodeDecodeError:
+            pass
+
+        # Prevent infinite loop: only backtrack up to 4 bytes (max UTF-8 sequence)
+        if max_len - split > MAX_UTF8_SEQUENCE_LEN:
+            break
+        split -= 1
+
+    # Fallback: no valid UTF-8 prefix found, emit first byte anyway
+    # This ensures progress on invalid/corrupted UTF-8 streams
+    byte = bytes(buffer[:1])
+    del buffer[:1]
+    return byte
+
+
+# =============================================================================
+# Exit Watcher Callbacks (for background monitoring)
+# =============================================================================
+
+# Type alias for exit callbacks
+ExitCallback = Callable[[str, int, float], None]  # (process_id, exit_code, duration)
+
+# Global registry of active sessions for cleanup on crash
+_active_sessions: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+_cleanup_registered = False
+
+
+def _cleanup_all_sessions():
+    """Cleanup handler called on interpreter exit."""
+    for session in list(_active_sessions.values()):
+        try:
+            session.terminate()
+        except Exception:
+            pass
+
+
+def _register_cleanup():
+    """Register atexit handler for session cleanup."""
+    global _cleanup_registered
+    if not _cleanup_registered:
+        atexit.register(_cleanup_all_sessions)
+        _cleanup_registered = True
+
+
 @dataclass
 class OutputBuffer:
     """Ring buffer for PTY output with size limit.
 
-    Matches Codex's OutputBufferState.
+    Matches Codex's OutputBufferState with UTF-8 boundary-safe chunking.
     """
     chunks: list = field(default_factory=list)
     total_bytes: int = 0
     max_bytes: int = OUTPUT_MAX_BYTES
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _pending: bytearray = field(default_factory=bytearray)  # For UTF-8 boundary handling
 
     def push_chunk(self, data: bytes):
         """Add a chunk, trimming oldest data if over limit."""
@@ -77,7 +233,7 @@ class OutputBuffer:
             self.chunks.append(data)
             self.total_bytes += len(data)
 
-            # Trim from the front if over limit
+            # Trim from the front if over limit (matches Codex's FIFO trimming)
             while self.total_bytes > self.max_bytes and self.chunks:
                 removed = self.chunks.pop(0)
                 self.total_bytes -= len(removed)
@@ -90,6 +246,31 @@ class OutputBuffer:
             self.total_bytes = 0
             return result
 
+    def drain_utf8_safe(self) -> str:
+        """Drain output with UTF-8 boundary-safe decoding.
+
+        This matches Codex's process_chunk() behavior:
+        - Extracts complete UTF-8 sequences
+        - Preserves incomplete sequences for next drain
+        - Makes progress on invalid UTF-8 by emitting single bytes
+        """
+        with self._lock:
+            # Add all chunks to pending buffer
+            self._pending.extend(b"".join(self.chunks))
+            self.chunks.clear()
+            self.total_bytes = 0
+
+            # Extract UTF-8 safe chunks
+            result_parts: List[bytes] = []
+            while True:
+                chunk = split_valid_utf8_prefix(self._pending)
+                if chunk is None:
+                    break
+                result_parts.append(chunk)
+
+            # Join and decode (should be valid UTF-8 now, but use replace for safety)
+            return b"".join(result_parts).decode("utf-8", errors="replace")
+
     def snapshot(self) -> bytes:
         """Get a snapshot without draining."""
         with self._lock:
@@ -99,10 +280,15 @@ class OutputBuffer:
 class PtySession:
     """A single PTY session wrapping a shell process.
 
-    Matches Codex's UnifiedExecSession.
+    Matches Codex's UnifiedExecSession with:
+    - Process group isolation (setpgid)
+    - Parent death signal (PDEATHSIG on Linux)
+    - Background exit watcher
+    - UTF-8 safe output handling
     """
 
-    def __init__(self, process_id: str, command: list, cwd: Path, env: dict):
+    def __init__(self, process_id: str, command: list, cwd: Path, env: dict,
+                 on_exit: Optional[ExitCallback] = None):
         self.process_id = process_id
         self.command = command
         self.cwd = cwd
@@ -114,6 +300,16 @@ class PtySession:
         self._has_exited = False
         self._process = None
         self._reader_thread = None
+        self._exit_watcher_thread = None
+        self._on_exit = on_exit  # Callback when process exits
+
+        # Synchronization for exit watcher (matches Codex's cancellation_token pattern)
+        self._exit_event = threading.Event()  # Signals process has exited
+        self._output_drained_event = threading.Event()  # Signals output fully collected
+
+        # Register for cleanup on crash
+        _register_cleanup()
+        _active_sessions[process_id] = self
 
     def spawn(self) -> bool:
         """Spawn the PTY process. Returns True on success."""
@@ -131,7 +327,13 @@ class PtySession:
             return False
 
     def _spawn_unix(self) -> bool:
-        """Spawn using pexpect on Unix."""
+        """Spawn using pexpect on Unix with process group isolation.
+
+        Matches Codex's spawn.rs behavior:
+        - Creates new process group (setpgid)
+        - Registers parent death signal (PDEATHSIG on Linux)
+        - Protects against race condition where parent dies before signal registered
+        """
         # Build the command
         if len(self.command) == 1:
             cmd = self.command[0]
@@ -145,6 +347,12 @@ class PtySession:
         spawn_env.update(self.env)
         spawn_env.update(PTY_ENV)
 
+        # Capture parent PID BEFORE fork (critical for race condition check)
+        parent_pid = os.getpid()
+
+        # Create process group setup function
+        preexec_fn = create_process_group_setup(parent_pid)
+
         self._process = pexpect.spawn(
             cmd,
             args=args,
@@ -152,15 +360,25 @@ class PtySession:
             env=spawn_env,
             encoding=None,  # Binary mode
             timeout=None,
+            preexec_fn=preexec_fn,  # Process group + PDEATHSIG setup
         )
 
         # Start reader thread
         self._reader_thread = threading.Thread(target=self._read_output_unix, daemon=True)
         self._reader_thread.start()
+
+        # Start exit watcher thread (matches Codex's spawn_exit_watcher)
+        self._exit_watcher_thread = threading.Thread(target=self._exit_watcher, daemon=True)
+        self._exit_watcher_thread.start()
+
         return True
 
     def _spawn_windows(self) -> bool:
-        """Spawn using pywinpty on Windows."""
+        """Spawn using pywinpty on Windows.
+
+        Note: Windows doesn't support setpgid or PDEATHSIG, but we still
+        start the exit watcher for consistent behavior.
+        """
         # Build command line
         cmdline = " ".join(self.command)
 
@@ -178,10 +396,19 @@ class PtySession:
         # Start reader thread
         self._reader_thread = threading.Thread(target=self._read_output_windows, daemon=True)
         self._reader_thread.start()
+
+        # Start exit watcher thread (matches Codex's spawn_exit_watcher)
+        self._exit_watcher_thread = threading.Thread(target=self._exit_watcher, daemon=True)
+        self._exit_watcher_thread.start()
+
         return True
 
     def _read_output_unix(self):
-        """Background thread to read PTY output on Unix."""
+        """Background thread to read PTY output on Unix.
+
+        Signals exit_event when process exits, allowing exit watcher
+        to handle cleanup after grace period.
+        """
         try:
             while self._process and self._process.isalive():
                 try:
@@ -198,9 +425,15 @@ class PtySession:
             self._has_exited = True
             if self._process:
                 self._exit_code = self._process.exitstatus
+            # Signal that process has exited (for exit watcher)
+            self._exit_event.set()
 
     def _read_output_windows(self):
-        """Background thread to read PTY output on Windows."""
+        """Background thread to read PTY output on Windows.
+
+        Signals exit_event when process exits, allowing exit watcher
+        to handle cleanup after grace period.
+        """
         try:
             while self._process and self._process.isalive():
                 try:
@@ -217,6 +450,45 @@ class PtySession:
             self._has_exited = True
             if self._process:
                 self._exit_code = self._process.exitstatus
+            # Signal that process has exited (for exit watcher)
+            self._exit_event.set()
+
+    def _exit_watcher(self):
+        """Background thread that monitors for process exit.
+
+        Matches Codex's spawn_exit_watcher() from async_watcher.rs:
+        1. Wait for exit_event (process exited)
+        2. Wait grace period for final output (TRAILING_OUTPUT_GRACE)
+        3. Signal output_drained_event
+        4. Call on_exit callback if registered
+        """
+        # Wait for process to exit
+        self._exit_event.wait()
+
+        # Grace period for any final output to arrive
+        # This matches Codex's TRAILING_OUTPUT_GRACE (100ms)
+        time.sleep(TRAILING_OUTPUT_GRACE_MS / 1000.0)
+
+        # Signal that output has been drained
+        self._output_drained_event.set()
+
+        # Calculate duration
+        duration = time.time() - self.started_at
+        exit_code = self._exit_code if self._exit_code is not None else -1
+
+        # Call exit callback if registered
+        if self._on_exit:
+            try:
+                self._on_exit(self.process_id, exit_code, duration)
+            except Exception:
+                pass  # Don't let callback errors crash the watcher
+
+        # Unregister from global cleanup
+        try:
+            if self.process_id in _active_sessions:
+                del _active_sessions[self.process_id]
+        except Exception:
+            pass
 
     def write(self, data: str) -> bool:
         """Write input to the PTY."""
@@ -235,13 +507,14 @@ class PtySession:
     def read_output(self, timeout_ms: int = 1000) -> str:
         """Read accumulated output with timeout.
 
-        Returns output as string (UTF-8 decoded).
+        Returns output as string with UTF-8 boundary-safe decoding.
+        This matches Codex's process_chunk() behavior from async_watcher.rs.
         """
         # Wait a bit for output to accumulate
         time.sleep(min(timeout_ms, MIN_YIELD_TIME_MS) / 1000.0)
 
-        output = self._output_buffer.drain()
-        return output.decode("utf-8", errors="replace")
+        # Use UTF-8 safe draining (preserves incomplete sequences)
+        return self._output_buffer.drain_utf8_safe()
 
     def has_exited(self) -> bool:
         """Check if the process has exited."""
@@ -268,7 +541,7 @@ class PtySession:
         return self._exit_code
 
     def terminate(self):
-        """Terminate the PTY session."""
+        """Terminate the PTY session and cleanup resources."""
         if self._process:
             try:
                 if IS_WINDOWS:
@@ -279,16 +552,37 @@ class PtySession:
                 pass
         self._has_exited = True
 
+        # Signal exit events to unblock any waiting threads
+        self._exit_event.set()
+        self._output_drained_event.set()
+
+        # Unregister from global cleanup
+        try:
+            if self.process_id in _active_sessions:
+                del _active_sessions[self.process_id]
+        except Exception:
+            pass
+
 
 class PtySessionManager:
     """Manages multiple PTY sessions with LRU pruning.
 
-    Matches Codex's UnifiedExecSessionManager.
+    Matches Codex's UnifiedExecSessionManager with:
+    - Process group isolation
+    - Background exit watchers
+    - Automatic cleanup on process exit
     """
 
-    def __init__(self):
+    def __init__(self, on_session_exit: Optional[ExitCallback] = None):
+        """Initialize the session manager.
+
+        Args:
+            on_session_exit: Optional callback called when any session exits.
+                             Signature: (process_id, exit_code, duration) -> None
+        """
         self._sessions: Dict[str, PtySession] = OrderedDict()
         self._lock = threading.Lock()
+        self._on_session_exit = on_session_exit
 
     def _generate_process_id(self) -> str:
         """Generate a unique process ID."""
@@ -327,6 +621,23 @@ class PtySessionManager:
                 del self._sessions[pid]
                 return
 
+    def _make_exit_callback(self, process_id: str) -> ExitCallback:
+        """Create an exit callback that removes the session and calls user callback."""
+        def on_exit(pid: str, exit_code: int, duration: float):
+            # Remove from session store
+            with self._lock:
+                if pid in self._sessions:
+                    del self._sessions[pid]
+
+            # Call user-provided callback if any
+            if self._on_session_exit:
+                try:
+                    self._on_session_exit(pid, exit_code, duration)
+                except Exception:
+                    pass
+
+        return on_exit
+
     def exec_command(
         self,
         command: list,
@@ -336,7 +647,12 @@ class PtySessionManager:
     ) -> Tuple[str, str, Optional[str], Optional[int]]:
         """Execute a command in a new PTY session.
 
-        Returns: (output, process_id or None if exited, exit_code or None if still running)
+        Returns: (output, process_id or "" if exited, process_id duplicate, exit_code or None if running)
+
+        Features matching Codex:
+        - Process group isolation (setpgid)
+        - Parent death signal (PDEATHSIG on Linux)
+        - Background exit watcher with automatic cleanup
         """
         if not HAS_PTY:
             return self._fallback_exec(command, cwd, env)
@@ -345,11 +661,15 @@ class PtySessionManager:
             self._prune_if_needed()
             process_id = self._generate_process_id()
 
+        # Create exit callback for automatic cleanup
+        exit_callback = self._make_exit_callback(process_id)
+
         session = PtySession(
             process_id=process_id,
             command=command,
             cwd=cwd,
             env=env or {},
+            on_exit=exit_callback,  # Background exit watcher will call this
         )
 
         if not session.spawn():
